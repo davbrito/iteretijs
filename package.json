@@ -1,5 +1,5 @@
 {
-  "name": "iterjs",
+  "name": "iteretijs",
   "version": "0.0.1",
   "description": "Set of JavaScript iterator, generator and stream utilities",
   "type": "module",
@@ -16,7 +16,7 @@
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/davbrito/iterjs.git"
+    "url": "git+https://github.com/davbrito/iteretijs.git"
   },
   "keywords": [
     "javascript",
@@ -28,9 +28,9 @@
   "author": "David Brito",
   "license": "MIT",
   "bugs": {
-    "url": "https://github.com/davbrito/iterjs/issues"
+    "url": "https://github.com/davbrito/iteretijs/issues"
   },
-  "homepage": "https://github.com/davbrito/iterjs#readme",
+  "homepage": "https://github.com/davbrito/iteretijs#readme",
   "devDependencies": {
     "@typescript-eslint/eslint-plugin": "^5.19.0",
     "eslint": "^8.13.0",
