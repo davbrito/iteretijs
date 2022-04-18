@@ -1,15 +1,18 @@
 {
   "name": "iteretijs",
-  "version": "0.0.1",
+  "version": "0.0.2",
   "description": "Set of JavaScript iterator, generator and stream utilities",
   "type": "module",
-  "source": "./src/index.ts",
   "types": "./dist/types.d.ts",
   "exports": {
     ".": "./dist/index.js",
     "./async": "./dist/async.js",
     "./stream": "./dist/stream.js"
   },
+  "files": [
+    "dist",
+    "README.md"
+  ],
   "scripts": {
     "test": "jest",
     "build": "tsc"
