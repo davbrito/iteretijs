@@ -1,0 +1,40 @@
+{
+  "name": "iterjs",
+  "version": "0.0.1",
+  "description": "Set of JavaScript iterator, generator and stream utilities",
+  "type": "module",
+  "source": "./src/index.ts",
+  "types": "./dist/types.d.ts",
+  "exports": {
+    ".": "./dist/index.js",
+    "./async": "./dist/async.js",
+    "./stream": "./dist/stream.js"
+  },
+  "scripts": {
+    "test": "jest",
+    "build": "tsc"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/davbrito/iterjs.git"
+  },
+  "keywords": [
+    "javascript",
+    "typescript",
+    "iterators",
+    "generators",
+    "async"
+  ],
+  "author": "David Brito",
+  "license": "MIT",
+  "bugs": {
+    "url": "https://github.com/davbrito/iterjs/issues"
+  },
+  "homepage": "https://github.com/davbrito/iterjs#readme",
+  "devDependencies": {
+    "@typescript-eslint/eslint-plugin": "^5.19.0",
+    "eslint": "^8.13.0",
+    "prettier": "^2.6.2",
+    "typescript": "^4.6.3"
+  }
+}
