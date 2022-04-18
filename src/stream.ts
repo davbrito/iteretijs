@@ -1,10 +1,3 @@
-export interface TransformationOptions<T, U> {
-  map?: (value: T) => U | Promise<U>;
-  filter?: (value: T) => boolean | Promise<boolean>;
-  take?: number;
-  drop?: number;
-}
-
 export function transform<T, U>(transform: TransformerTransformCallback<T, U>) {
   return new TransformStream<T, U>({ transform });
 }
