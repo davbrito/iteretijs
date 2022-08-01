@@ -42,13 +42,13 @@ export function drop<T>(count: number): TransformStream<T, T> {
 export function concat<T>(...streams: ReadableStream<T>[]): ReadableStream<T> {
   const { readable, writable } = new TransformStream();
 
-  streams.reduce(
-    (accum, stream, index, streams) =>
-      accum.then(() =>
-        stream.pipeTo(writable, { preventClose: index + 1 !== streams.length })
-      ),
-    Promise.resolve()
-  );
+  streams
+    .reduce(
+      (prev, stream) =>
+        prev.then(() => stream.pipeTo(writable, { preventClose: true })),
+      Promise.resolve()
+    )
+    .then(() => writable.close());
 
   return readable;
 }
