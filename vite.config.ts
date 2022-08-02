@@ -11,7 +11,7 @@ export default defineConfig(async ({ mode }) => {
     plugins: [dts()],
     build: {
       emptyOutDir: true,
-      minify: mode === "production",
+      minify: false,
       sourcemap: true,
       rollupOptions: {
         external: Object.keys({ ...pkg.dependencies, ...pkg.peerDependencies }),
