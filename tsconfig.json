@@ -1,15 +1,15 @@
 {
   "compilerOptions": {
     "rootDir": "./src",
-    "baseUrl": "./src",
     "strict": true,
     "strictNullChecks": true,
-    "target": "ES2016",
-    "module": "ES2022",
-    "lib": ["ES2021", "DOM"],
-    "declaration": true,
+    "target": "ESNext",
+    "module": "ESNext",
+    "moduleResolution": "node",
+    "lib": ["es2021", "dom"],
     "outDir": "dist",
-    "sourceMap": true
+    "declaration": true,
+    "declarationMap": true
   },
   "include": ["src/**/*.ts"]
 }

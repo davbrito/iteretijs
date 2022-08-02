@@ -137,7 +137,7 @@ export function iota(n = Infinity): ReadableStream<number> {
 }
 
 export function debounce<T>(ms: number): TransformStream<T> {
-  let timer: number | undefined;
+  let timer: ReturnType<typeof setTimeout> | undefined;
   return new TransformStream<T, T>({
     transform(data, controller) {
       if (!timer) {
@@ -158,7 +158,7 @@ export function debounce<T>(ms: number): TransformStream<T> {
 }
 
 export function throttle<T>(ms: number): TransformStream<T> {
-  let timer: number | undefined;
+  let timer: ReturnType<typeof setTimeout> | undefined;
   return new TransformStream<T, T>({
     transform(data, controller) {
       if (!timer) {

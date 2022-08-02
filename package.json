@@ -1,21 +1,29 @@
 {
   "name": "iteretijs",
-  "version": "0.0.3",
+  "version": "0.1.0",
   "description": "Set of JavaScript iterator, generator and stream utilities",
   "type": "module",
-  "types": "./dist/types.d.ts",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
   "exports": {
-    ".": "./dist/index.js",
-    "./async": "./dist/async.js",
-    "./stream": "./dist/stream.js"
+    "./package.json": "./package.json",
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    },
+    "./*": {
+      "types": "./dist/*.d.ts",
+      "default": "./dist/*.js"
+    }
   },
   "files": [
     "dist",
+    "src",
     "README.md"
   ],
   "scripts": {
     "test": "jest",
-    "build": "tsc"
+    "build": "vite build"
   },
   "repository": {
     "type": "git",
@@ -34,10 +42,15 @@
     "url": "https://github.com/davbrito/iteretijs/issues"
   },
   "homepage": "https://github.com/davbrito/iteretijs#readme",
+  "dependencies": {},
+  "peerDependencies": {},
   "devDependencies": {
-    "@typescript-eslint/eslint-plugin": "^5.19.0",
-    "eslint": "^8.13.0",
-    "prettier": "^2.6.2",
-    "typescript": "^4.6.3"
+    "@types/node": "^18.6.3",
+    "@typescript-eslint/eslint-plugin": "^5.32.0",
+    "eslint": "^8.21.0",
+    "prettier": "^2.7.1",
+    "vite": "^3.0.4",
+    "vite-plugin-dts": "^1.4.1",
+    "typescript": "^4.7.4"
   }
 }

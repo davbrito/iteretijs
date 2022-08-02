@@ -1,0 +1,14 @@
+{
+  "compilerOptions": {
+    "composite": true,
+    "outDir": "./dist/config",
+    "target": "ES2022",
+    "module": "Node16",
+    "moduleResolution": "Node16",
+    "skipLibCheck": true,
+    "resolveJsonModule": true,
+    "noEmit": false,
+    "lib": ["ES2021", "DOM"]
+  },
+  "include": ["vite.config.ts", "package.json", "config/**/*.ts"]
+}
