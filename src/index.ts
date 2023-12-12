@@ -56,6 +56,8 @@ export function* zip<T, U>(
     const item2 = iter2.next();
 
     if (item1.done || item2.done) {
+      if (!item1.done) iter1.return?.();
+      if (!item2.done) iter2.return?.();
       break;
     }
     yield [item1.value, item2.value];
@@ -67,5 +69,17 @@ export function* enumerate<T>(iterable: Iterable<T>): Iterable<[number, T]> {
   for (const item of iterable) {
     yield [index, item];
     index++;
+  }
+}
+
+export function* iota(start = 0, step = 1): Iterable<number> {
+  for (let i = start; ; i += step) {
+    yield i;
+  }
+}
+
+export function* range(start: number, end: number, step = 1): Iterable<number> {
+  for (let i = start; i < end; i += step) {
+    yield i;
   }
 }

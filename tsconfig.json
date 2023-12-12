@@ -1,15 +1,16 @@
 {
   "compilerOptions": {
-    "rootDir": "./src",
     "strict": true,
     "strictNullChecks": true,
-    "target": "ESNext",
-    "module": "ESNext",
+    "target": "ES2022",
+    "module": "ES2022",
     "moduleResolution": "Bundler",
     "lib": ["es2023", "dom"],
     "outDir": "dist",
     "declaration": true,
-    "declarationMap": true
+    "declarationMap": true,
+    "noEmit": true,
+    "allowImportingTsExtensions": true,
   },
-  "include": ["src/**/*.ts"]
+  "include": ["src/**/*.ts", "tests/**/*.ts"]
 }

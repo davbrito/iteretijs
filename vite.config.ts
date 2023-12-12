@@ -1,3 +1,4 @@
+/// <reference types="vitest" />
 import { glob } from "glob";
 import { fileURLToPath } from "node:url";
 import { UserConfig, defineConfig } from "vite";
@@ -15,7 +16,12 @@ export default defineConfig(async () => {
   });
 
   return {
-    plugins: [dts()],
+    plugins: [
+      dts({
+        exclude: ["tests/*"],
+        tsconfigPath: fileURLToPath(new URL("./tsconfig.json", import.meta.url)),
+      }),
+    ],
     build: {
       lib: {
         entry: inputs,
@@ -30,6 +36,13 @@ export default defineConfig(async () => {
           ...pkg["peerDependencies"],
         }),
       },
+    },
+    test: {
+      coverage: {
+        enabled: true,
+      },
+      uiBase: "/",
+      setupFiles: "tests/setup.ts",
     },
   } satisfies UserConfig;
 });

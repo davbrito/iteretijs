@@ -1,6 +1,10 @@
+.vscode
+
 node_modules
 
+# Build
 dist
-.parcel-cache
+.vite
 
-.vscode
+# Testing
+coverage
