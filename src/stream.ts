@@ -3,7 +3,7 @@ export function transform<T, U>(transform: TransformerTransformCallback<T, U>) {
 }
 
 export function map<T, U>(
-  mapper: (value: T) => U | Promise<U>
+  mapper: (value: T) => U | Promise<U>,
 ): TransformStream<T, U> {
   return transform(async (data, controller) => {
     controller.enqueue(await mapper(data));
@@ -11,7 +11,7 @@ export function map<T, U>(
 }
 
 export function filter<T>(
-  predicate: (value: T) => boolean | Promise<boolean>
+  predicate: (value: T) => boolean | Promise<boolean>,
 ): TransformStream<T, T> {
   return transform(async (data, controller) => {
     if (await predicate(data)) {
@@ -46,7 +46,7 @@ export function concat<T>(...streams: ReadableStream<T>[]): ReadableStream<T> {
     .reduce(
       (prev, stream) =>
         prev.then(() => stream.pipeTo(writable, { preventClose: true })),
-      Promise.resolve()
+      Promise.resolve(),
     )
     .then(() => writable.close());
 
@@ -54,7 +54,7 @@ export function concat<T>(...streams: ReadableStream<T>[]): ReadableStream<T> {
 }
 
 export function zipWith<T, U>(
-  stream: ReadableStream<U>
+  stream: ReadableStream<U>,
 ): TransformStream<T, [T, U]> {
   const reader = stream.getReader();
   return new TransformStream({
@@ -77,7 +77,7 @@ export function zipWith<T, U>(
 
 export function zip<T, U>(
   stream1: ReadableStream<T>,
-  stream2: ReadableStream<U>
+  stream2: ReadableStream<U>,
 ): ReadableStream<[T, U]> {
   const { readable, writable } = new TransformStream<[T, U], [T, U]>();
 

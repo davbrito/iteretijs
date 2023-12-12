@@ -1,6 +1,6 @@
 export async function* map<T, U>(
   iterable: AsyncIterable<T>,
-  mapper: (value: T) => U | Promise<U>
+  mapper: (value: T) => U | Promise<U>,
 ): AsyncIterable<U> {
   for await (const item of iterable) {
     yield mapper(item);
@@ -9,7 +9,7 @@ export async function* map<T, U>(
 
 export async function* filter<T>(
   iterable: AsyncIterable<T>,
-  predicate: (value: T) => boolean | Promise<boolean>
+  predicate: (value: T) => boolean | Promise<boolean>,
 ): AsyncIterable<T> {
   for await (const item of iterable) {
     if (await predicate(item)) {
@@ -20,7 +20,7 @@ export async function* filter<T>(
 
 export async function* take<T>(
   iterable: AsyncIterable<T>,
-  count: number
+  count: number,
 ): AsyncIterable<T> {
   let i = 0;
   for await (const item of iterable) {
@@ -34,7 +34,7 @@ export async function* take<T>(
 
 export async function* drop<T>(
   iterable: AsyncIterable<T>,
-  count: number
+  count: number,
 ): AsyncIterable<T> {
   let i = 0;
   for await (const item of iterable) {
@@ -55,7 +55,7 @@ export async function* concat<T>(
 
 export async function* zip<T, U>(
   iterable1: AsyncIterable<T>,
-  iterable2: AsyncIterable<U>
+  iterable2: AsyncIterable<U>,
 ): AsyncIterable<[T, U]> {
   const iter1 = iterable1[Symbol.asyncIterator]();
   const iter2 = iterable2[Symbol.asyncIterator]();
@@ -72,7 +72,7 @@ export async function* zip<T, U>(
 }
 
 export function iterateStream<T>(
-  stream: ReadableStream<T>
+  stream: ReadableStream<T>,
 ): AsyncIterableIterator<T> {
   const reader = stream.getReader();
 
@@ -93,7 +93,7 @@ export function iterateStream<T>(
 }
 
 export async function* enumerate<T>(
-  iterable: AsyncIterable<T>
+  iterable: AsyncIterable<T>,
 ): AsyncIterableIterator<[number, T]> {
   let index = 0;
   for await (const item of iterable) {

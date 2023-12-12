@@ -5,8 +5,8 @@
     "strictNullChecks": true,
     "target": "ESNext",
     "module": "ESNext",
-    "moduleResolution": "node",
-    "lib": ["es2021", "dom"],
+    "moduleResolution": "Bundler",
+    "lib": ["es2023", "dom"],
     "outDir": "dist",
     "declaration": true,
     "declarationMap": true
