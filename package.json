@@ -1,6 +1,6 @@
 {
   "name": "iteretijs",
-  "version": "0.2.2",
+  "version": "0.2.3",
   "description": "Set of JavaScript iterator, generator and stream utilities",
   "type": "module",
   "engines": {
