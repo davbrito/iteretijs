@@ -54,6 +54,6 @@ jobs:
           title: "chore: version packages"
           commit: "chore: version packages"
           createGithubReleases: true
+          github-token: ${{ steps.app-token.outputs.token }}
         env:
-          GITHUB_TOKEN: ${{ steps.app-token.outputs.token }}
           NPM_CONFIG_PROVENANCE: "true"
