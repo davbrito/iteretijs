@@ -1,6 +1,6 @@
 import { Mock, describe, expect, it, vi } from "vitest";
 import { concat, drop, enumerate, filter, iota, map, range, take, zip } from "../src/index.ts";
-import { dumbIterable } from "./utils.ts";
+import { dumbIterable, exits, trackedIterable } from "./utils.ts";
 
 function expectFnCalls(iter: Iterator<unknown>, fn: Mock, expecteds: unknown[]): void {
   expect(fn).not.toHaveBeenCalled();
@@ -195,6 +195,70 @@ describe("zip", () => {
     const iterable = zip(a, b);
     const output = iterable[Symbol.iterator]();
     expectReturnWhenDone(b, output);
+  });
+
+  describe("closes the sources", () => {
+    it.each(Object.entries(exits))("when the consumer exits with %s", (_name, exit) => {
+      const a = trackedIterable(1, 10);
+      const b = trackedIterable(1, 10);
+      exit(zip(a, b));
+      expect(a.returns).toBe(1);
+      expect(b.returns).toBe(1);
+    });
+
+    it("when the first source throws, closing the second", () => {
+      const a = trackedIterable(1, 10, { failOn: 1 });
+      const b = trackedIterable(1, 10);
+      expect(() => Array.from(zip(a, b))).toThrow("source failed");
+      expect(b.returns).toBe(1);
+    });
+
+    it("when the second source throws, closing the first", () => {
+      const a = trackedIterable(1, 10);
+      const b = trackedIterable(1, 10, { failOn: 1 });
+      expect(() => Array.from(zip(a, b))).toThrow("source failed");
+      expect(a.returns).toBe(1);
+    });
+
+    it("keeping the original error when closing the other source also throws", () => {
+      const a = trackedIterable(1, 10, { returnError: new Error("return failed") });
+      const b = trackedIterable(1, 10, { failOn: 1 });
+      expect(() => Array.from(zip(a, b))).toThrow("source failed");
+      expect(a.returns).toBe(1);
+    });
+
+    it("when getting the second iterator throws", () => {
+      const a = trackedIterable(1, 10);
+      const bad: Iterable<number> = {
+        [Symbol.iterator]() {
+          throw new Error("bad iterable");
+        },
+      };
+      expect(() => Array.from(zip(a, bad))).toThrow("bad iterable");
+      expect(a.returns).toBe(1);
+    });
+
+    it("closing the second source when the first one is empty", () => {
+      const b = trackedIterable(0, 10);
+      Array.from(zip([], b));
+      expect(b.returns).toBe(1);
+    });
+
+    it("closing the second source when the first next() throws on the first call", () => {
+      const a = trackedIterable(0, 10, { failOn: 0 });
+      const b = trackedIterable(0, 10);
+      expect(() => Array.from(zip(a, b))).toThrow("source failed");
+      expect(b.returns).toBe(1);
+    });
+
+    it("but not the one that already completed", () => {
+      const a = trackedIterable(1, 3);
+      const b = trackedIterable(1, 10);
+      Array.from(zip(a, b));
+      expect(a.completed).toBe(true);
+      expect(a.returns).toBe(0);
+      expect(b.returns).toBe(1);
+    });
   });
 });
 

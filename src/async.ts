@@ -46,19 +46,58 @@ export async function* concat<T>(...iterables: AsyncIterable<T>[]): AsyncItereti
 
 export async function* zip<T, U>(iterable1: AsyncIterable<T>, iterable2: AsyncIterable<U>): AsyncItereti<[T, U]> {
   const iter1 = iterable1[Symbol.asyncIterator]();
-  const iter2 = iterable2[Symbol.asyncIterator]();
-
-  for (;;) {
-    const [item1, item2] = await Promise.all([iter1.next(), iter2.next()]);
-
-    if (item1.done || item2.done) {
-      if (!item1.done) await iter1.return?.();
-      if (!item2.done) await iter2.return?.();
-      break;
-    }
-
-    yield [item1.value, item2.value];
+  let iter2: AsyncIterator<U>;
+  try {
+    iter2 = iterable2[Symbol.asyncIterator]();
+  } catch (error) {
+    await closeAll([iter1], true);
+    throw error;
   }
+
+  // An iterator that is mid-`next()`, rejected or completed must not get `return()`.
+  let open1 = false;
+  let open2 = false;
+  let failed = false;
+
+  try {
+    for (;;) {
+      open1 = open2 = false;
+      // Wait for both to settle so a rejection never leaves the other `next()` in flight.
+      // The `async` wrappers also turn a synchronous throw from `next()` into a rejection.
+      const [result1, result2] = await Promise.allSettled([(async () => iter1.next())(), (async () => iter2.next())()]);
+      open1 = result1.status === "fulfilled" && !result1.value.done;
+      open2 = result2.status === "fulfilled" && !result2.value.done;
+
+      if (result1.status === "rejected") throw result1.reason;
+      if (result2.status === "rejected") throw result2.reason;
+      if (result1.value.done || result2.value.done) break;
+
+      yield [result1.value.value, result2.value.value];
+    }
+  } catch (error) {
+    failed = true;
+    throw error;
+  } finally {
+    await closeAll([open1 && iter1, open2 && iter2], failed);
+  }
+}
+
+/**
+ * Calls `return()` on every given iterator, like the spec's `AsyncIteratorClose`: an error thrown by
+ * `return()` only propagates when there is no error already in flight (`suppress`).
+ */
+async function closeAll(iterators: (AsyncIterator<unknown> | false)[], suppress: boolean): Promise<void> {
+  let failed = false;
+  let failure: unknown;
+  for (const iterator of iterators) {
+    if (!iterator) continue;
+    try {
+      await iterator.return?.();
+    } catch (error) {
+      if (!failed) [failed, failure] = [true, error];
+    }
+  }
+  if (failed && !suppress) throw failure;
 }
 
 interface IterateStreamOptions {
