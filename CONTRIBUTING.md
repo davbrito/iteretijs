@@ -60,9 +60,45 @@ The workflow depends on settings outside this repository:
 
 ### Prereleases
 
-For a prerelease (for example, a `1.0.0-next.N`), Changesets uses a prerelease mode: `changeset pre enter next`, then the usual version and publish steps, and `changeset pre exit` when finished. Releases go out under the `next` npm dist-tag instead of `latest`.
+Prereleases (for example `1.0.0-next.0`) let users try breaking changes before a stable release. Changesets has a prerelease mode for this. It is easy to get wrong, so read the [prerelease guide](https://changesets.dev/guide/prereleases) first. Mistakes can leave the repository and npm in a state that is hard to fix.
 
-The Changesets documentation recommends running prereleases from a branch other than the default one, and warns that mistakes in this mode are hard to undo. Read the current [prerelease guide](https://changesets.dev/guide/prereleases) before starting one. The workflow currently only runs on `main`, so it has to be adapted first.
+In this repository, prereleases are made from a long-lived **`next` branch**, never from `main`. `main` keeps releasing stable `0.x` versions (fixes, deprecations) in the meantime. Versions are published under the `next` npm dist-tag, so `latest` does not move, and users install them with `npm install iteretijs@next`.
+
+How it is wired:
+
+- `release.yml` runs on pushes to `main` and `next`, and `ci.yml` also runs on pushes to `next`.
+- Outside `main`, the `pack` job refuses to publish unless `.changeset/pre.json` exists and has `"mode": "pre"` (`pre exit` switches it to `"exit"`). Pushing to `next` can never publish a stable version to `latest`.
+- The Version Packages PR targets the branch the workflow ran on, so on `next` it is titled and based on `next`.
+- The `main` ruleset only protects the default branch. If you want `next` protected too, add it to the ruleset's targets.
+
+**Starting a prerelease cycle**
+
+1. Release everything pending on `main` first, so old changesets are not pulled into the first prerelease.
+2. Create the branch: `git switch -c next main && git push -u origin next`.
+3. On `next`, set `"baseBranch": "next"` in `.changeset/config.json`.
+4. Run `npx changeset pre enter next`. This creates `.changeset/pre.json`. Commit and push it (through a PR into `next`, or directly if you did not protect it).
+5. Merge breaking-change PRs into `next`, each with its own changeset, like on `main`.
+
+**Releasing a prerelease**
+
+Merge the Version Packages PR on `next`. It publishes `X.Y.Z-next.N` under the `next` dist-tag, creates the tag and the GitHub Release. Repeat as often as needed. While in prerelease mode, consumed changesets move to `.changeset/pre` instead of being deleted; they feed the stable changelog, and you can still edit or delete them before exiting.
+
+Keep `next` current by merging `main` into it regularly, so fixes released on `main` are not lost.
+
+**Exiting: the stable release**
+
+1. On `next`, restore `"baseBranch": "main"` and run `npx changeset pre exit`. This only records the intent in `pre.json`; it versions nothing.
+2. Commit, and merge `next` into `main` through a PR.
+3. On `main`, the workflow opens the Version Packages PR with the stable version (for example `1.0.0`). Merging it publishes to `latest`.
+4. Delete the `next` branch, or keep it for the following cycle.
+
+**Caveats**
+
+- Prerelease mode applies to the whole package; you cannot exclude changes.
+- Prerelease versions are not satisfied by most semver ranges, so a user on `^0.3.0` will not get `1.0.0-next.0` by accident.
+- A package that was never published also gets the `latest` tag in prerelease mode. This does not apply here, because `iteretijs` already has stable versions.
+- `pre enter` and `pre exit` should only be committed on `next`. Never merge a `pre.json` into `main` while the cycle is running.
+- To share a build of one PR without a prerelease cycle, a snapshot (`changeset version --snapshot`) is a lighter alternative. It is not wired into the workflow yet.
 
 ### Troubleshooting
 
