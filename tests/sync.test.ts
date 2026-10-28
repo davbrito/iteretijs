@@ -1,6 +1,6 @@
 import { Mock, describe, expect, it, vi } from "vitest";
 import { concat, drop, enumerate, filter, iota, map, range, take, zip } from "../src/index.ts";
-import { dumbIterable } from "./utils.ts";
+import { dumbIterable, trackedIterable } from "./utils.ts";
 
 function expectFnCalls(iter: Iterator<unknown>, fn: Mock, expecteds: unknown[]): void {
   expect(fn).not.toHaveBeenCalled();
@@ -195,6 +195,61 @@ describe("zip", () => {
     const iterable = zip(a, b);
     const output = iterable[Symbol.iterator]();
     expectReturnWhenDone(b, output);
+  });
+
+  describe("closes the sources", () => {
+    it.each([
+      [
+        "break",
+        (it: Iterable<unknown>) => {
+          for (const _ of it) break;
+        },
+      ],
+      [
+        "return",
+        (it: Iterable<unknown>) =>
+          (() => {
+            for (const _ of it) return;
+          })(),
+      ],
+      [
+        "throw",
+        (it: Iterable<unknown>) => {
+          try {
+            for (const _ of it) throw new Error("boom");
+          } catch {}
+        },
+      ],
+    ])("when the consumer exits with %s", (_name, consume) => {
+      const a = trackedIterable(1, 10);
+      const b = trackedIterable(1, 10);
+      consume(zip(a, b));
+      expect(a.returns).toBe(1);
+      expect(b.returns).toBe(1);
+    });
+
+    it("when the first source throws, closing the second", () => {
+      const a = trackedIterable(1, 10, { failOn: 1 });
+      const b = trackedIterable(1, 10);
+      expect(() => Array.from(zip(a, b))).toThrow("source failed");
+      expect(b.returns).toBe(1);
+    });
+
+    it("when the second source throws, closing the first", () => {
+      const a = trackedIterable(1, 10);
+      const b = trackedIterable(1, 10, { failOn: 1 });
+      expect(() => Array.from(zip(a, b))).toThrow("source failed");
+      expect(a.returns).toBe(1);
+    });
+
+    it("but not the one that already completed", () => {
+      const a = trackedIterable(1, 3);
+      const b = trackedIterable(1, 10);
+      Array.from(zip(a, b));
+      expect(a.completed).toBe(true);
+      expect(a.returns).toBe(0);
+      expect(b.returns).toBe(1);
+    });
   });
 });
 

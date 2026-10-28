@@ -12,7 +12,7 @@ import {
   zip,
   reduce,
 } from "../src/async.ts";
-import { dumbAsyncIterable, dumbReadableStream } from "./utils.ts";
+import { dumbAsyncIterable, dumbReadableStream, trackedAsyncIterable } from "./utils.ts";
 
 describe("return an async iterable", () => {
   it("map", () => {
@@ -266,6 +266,60 @@ describe("zip", () => {
     const result = zip(iterable1, iterable2);
     const c = await count(result);
     expect(c).toBe(3);
+  });
+
+  describe("closes the sources", () => {
+    it.each([
+      [
+        "break",
+        async (it: AsyncIterable<unknown>) => {
+          for await (const _ of it) break;
+        },
+      ],
+      [
+        "return",
+        async (it: AsyncIterable<unknown>) => {
+          for await (const _ of it) return;
+        },
+      ],
+      [
+        "throw",
+        async (it: AsyncIterable<unknown>) => {
+          try {
+            for await (const _ of it) throw new Error("boom");
+          } catch {}
+        },
+      ],
+    ])("when the consumer exits with %s", async (_name, consume) => {
+      const a = trackedAsyncIterable(1, 10);
+      const b = trackedAsyncIterable(1, 10);
+      await consume(zip(a, b));
+      expect(a.returns).toBe(1);
+      expect(b.returns).toBe(1);
+    });
+
+    it("when the first source rejects, closing the second", async () => {
+      const a = trackedAsyncIterable(1, 10, { failOn: 1 });
+      const b = trackedAsyncIterable(1, 10);
+      await expect(toArray(zip(a, b))).rejects.toThrow("source failed");
+      expect(b.returns).toBe(1);
+    });
+
+    it("when the second source rejects, closing the first", async () => {
+      const a = trackedAsyncIterable(1, 10);
+      const b = trackedAsyncIterable(1, 10, { failOn: 1 });
+      await expect(toArray(zip(a, b))).rejects.toThrow("source failed");
+      expect(a.returns).toBe(1);
+    });
+
+    it("but not the one that already completed", async () => {
+      const a = trackedAsyncIterable(1, 3);
+      const b = trackedAsyncIterable(1, 10);
+      await toArray(zip(a, b));
+      expect(a.completed).toBe(true);
+      expect(a.returns).toBe(0);
+      expect(b.returns).toBe(1);
+    });
   });
 });
 
