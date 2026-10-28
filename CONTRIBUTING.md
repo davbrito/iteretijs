@@ -6,48 +6,66 @@ The following is a set of guidelines for contributing to Iteretijs. These are mo
 
 Iteretijs is open to contributions. Feel free to open issues or PRs that contributes to the development of the librery.
 
+## Adding a changeset
+
+Releases are driven by [Changesets](https://changesets.dev). Each change that users should know about carries a small Markdown file in `.changeset/`, written in the same PR as the code. Commit messages do not drive releases, but we keep using [Conventional Commits](https://www.conventionalcommits.org) for readable history.
+
+**When.** Add a changeset to any PR that changes published behavior: `src/**`, or the `exports` or `engines` in `package.json`. You don't need one for tests, CI, docs or tooling. The changeset bot comments on every PR to tell you whether it has one.
+
+**How.** Run `npm run changeset`, pick the bump, write the summary and commit the generated file. You can add several changesets to a PR (one per user-visible change) and edit, rename or delete them until they are released. A maintainer can also add one from the link in the bot's comment.
+
+**Choosing the bump.** While the version is below `1.0.0`:
+
+| Change                                               | Bump    |
+| ---------------------------------------------------- | ------- |
+| Breaking change (removed or changed API, new engine) | `minor` |
+| New feature, deprecation, fix or performance work    | `patch` |
+
+From `1.0.0` on, standard [Semantic Versioning](https://semver.org) applies (breaking changes are `major`).
+
+**What to write.** The summary goes verbatim into `CHANGELOG.md` and the GitHub Release, so write it for users, in Markdown. Say **what** changed, **why**, and **how** to update their code. Code samples are welcome, especially for migrations. For example, for a deprecation:
+
+````md
+---
+"iteretijs": patch
+---
+
+Deprecate `zip` in favor of the native `Iterator.zip`.
+
+`zip` will be removed in v1.0. The native version takes an iterable of iterables:
+
+```diff
+- zip(a, b)
++ Iterator.zip([a, b])
+```
+````
+
 ## Releasing a new version
 
-Releases are published to npm by the [`Node.js Package`](.github/workflows/npm-publish.yml) workflow, which runs when a tag matching `vX.Y.Z` is pushed. It installs the dependencies, runs the tests, builds the package with `tsdown` and runs `npm publish` using [npm trusted publishing](https://docs.npmjs.com/trusted-publishers) (OIDC), so no npm token is stored in the repository.
+Releases are automated by the [`Release`](.github/workflows/release.yml) workflow, which runs on every push to `main`. Nobody publishes from a laptop and nobody pushes tags by hand.
 
-Only maintainers with push access to `main` can release. The package must have this repository and the `npm-publish.yml` workflow configured as a trusted publisher in its npm settings.
+1. **Merge PRs with changesets into `main`.** The workflow opens (or updates) a PR named `chore: version packages` that bumps `package.json` and `package-lock.json` and writes the new `CHANGELOG.md` entries. That PR is the release review: check the version and the notes.
+2. **Merge the `chore: version packages` PR.** The workflow then builds, packs and publishes the package to npm using [npm trusted publishing](https://docs.npmjs.com/trusted-publishers) (OIDC, no stored token), creates the `vX.Y.Z` tag and the GitHub Release with the changelog entry as its notes.
+3. **Verify the release.** Check the new version on [npm](https://www.npmjs.com/package/iteretijs) and the [GitHub Releases](https://github.com/davbrito/iteretijs/releases) page.
 
-1. **Make sure `main` is ready.** Pull the latest `main` and check that CI is green. Locally, run:
+PRs opened by `GITHUB_TOKEN` don't trigger other workflows, so CI does not run automatically on the version PR. The code it releases already passed CI on `main`; if you want CI on it anyway, run the **CI** workflow manually on the `changeset-release/main` branch from the **Actions** tab.
 
-   ```bash
-   npm ci
-   npm run lint
-   npm run format:check
-   npm test -- --run
-   npm run build
-   ```
+### Maintainer setup
 
-2. **Choose the version bump** following [Semantic Versioning](https://semver.org). Commits follow [Conventional Commits](https://www.conventionalcommits.org), so the types since the last tag tell you the bump:
+The workflow depends on settings outside this repository:
 
-   | Changes since the last release                          | Bump    |
-   | ------------------------------------------------------- | ------- |
-   | `fix:`, `perf:`, or only internal changes               | `patch` |
-   | `feat:`                                                 | `minor` |
-   | Anything marked `!` or with a `BREAKING CHANGE:` footer | `major` |
+- **Settings → Actions → General → "Allow GitHub Actions to create and approve pull requests"** must be enabled.
+- A GitHub environment named `npm` must exist. Optionally add required reviewers to it for a manual approval before each publish.
+- The npm package must list this repository, the `release.yml` workflow and the `npm` environment as its trusted publisher.
 
-   While the version is below `1.0.0`, breaking changes bump `minor` instead.
+### Prereleases
 
-3. **Bump the version and create the tag** from a clean `main`:
+For a prerelease (for example, a `1.0.0-next.N`), Changesets uses a prerelease mode: `changeset pre enter next`, then the usual version and publish steps, and `changeset pre exit` when finished. Releases go out under the `next` npm dist-tag instead of `latest`.
 
-   ```bash
-   npm version <patch|minor|major>
-   ```
+The Changesets documentation recommends running prereleases from a branch other than the default one, and warns that mistakes in this mode are hard to undo. Read the current [prerelease guide](https://changesets.dev/guide/prereleases) before starting one. The workflow currently only runs on `main`, so it has to be adapted first.
 
-   This updates `package.json` and `package-lock.json`, creates a commit named after the new version and the `vX.Y.Z` tag.
+### Troubleshooting
 
-4. **Push the commit and the tag**:
-
-   ```bash
-   git push origin main --follow-tags
-   ```
-
-   Pushing the tag starts the `Node.js Package` workflow. Follow it in the **Actions** tab; if the tests or the build fail, nothing is published.
-
-5. **Verify the release.** Check that the new version shows up on [npm](https://www.npmjs.com/package/iteretijs), and optionally create a GitHub release from the tag with the notes of the notable changes.
-
-If the workflow fails after the tag was pushed, fix the problem on `main` and bump to a new patch version. Published versions cannot be overwritten on npm, and moving or deleting a pushed tag should be avoided.
+- **`GitHub Actions is not permitted to create or approve pull requests`:** enable the setting listed in the maintainer setup.
+- **The publish job fails with an authentication error:** check that the npm trusted publisher matches the workflow filename and environment exactly.
+- **Published versions cannot be overwritten on npm.** If a release is broken, fix it on `main` with a new changeset and release a new patch version. Avoid moving or deleting a pushed tag.
