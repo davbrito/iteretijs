@@ -8,9 +8,9 @@ Iteretijs is open to contributions. Feel free to open issues or PRs that contrib
 
 ## Releasing a new version
 
-Releases are published to npm by the [`Node.js Package`](.github/workflows/npm-publish.yml) workflow, which runs when a tag matching `vX.Y.Z` is pushed. It installs the dependencies, runs the tests, builds the package with `tsdown` and runs `npm publish` using the `npm_token` repository secret.
+Releases are published to npm by the [`Node.js Package`](.github/workflows/npm-publish.yml) workflow, which runs when a tag matching `vX.Y.Z` is pushed. It installs the dependencies, runs the tests, builds the package with `tsdown` and runs `npm publish` using [npm trusted publishing](https://docs.npmjs.com/trusted-publishers) (OIDC), so no npm token is stored in the repository.
 
-Only maintainers with push access to `main` and to the `npm_token` secret can release.
+Only maintainers with push access to `main` can release. The package must have this repository and the `npm-publish.yml` workflow configured as a trusted publisher in its npm settings.
 
 1. **Make sure `main` is ready.** Pull the latest `main` and check that CI is green. Locally, run:
 
