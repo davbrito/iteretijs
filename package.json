@@ -26,6 +26,7 @@
     "package.json"
   ],
   "type": "module",
+  "sideEffects": false,
   "exports": {
     ".": "./dist/index.mjs",
     "./async": "./dist/async.mjs",
