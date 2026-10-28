@@ -61,7 +61,7 @@ export function concat<T>(...streams: ReadableStream<T>[]): ReadableStream<T> {
           index++;
         }
       } catch (error) {
-        // The failed stream is already errored: cancelling it again is a no-op.
+        // Cancelling an errored stream rejects with its stored error, which is rethrown below.
         await cancelRest(error).catch(() => {});
         throw error;
       }
@@ -80,8 +80,9 @@ export function zipWith<T, U>(stream: ReadableStream<U>): TransformStream<T, [T,
   const reader = stream.getReader();
   const transformer: CancellableTransformer<T, [T, U]> = {
     flush() {
-      // The main stream is over: nothing will read `stream` anymore.
-      return reader.cancel();
+      // The main stream is over and nothing will read `stream` anymore. Cleaning it up must not
+      // fail an output that already delivered everything, e.g. if `stream` errored in the meantime.
+      return reader.cancel().catch(() => {});
     },
     cancel(reason) {
       return reader.cancel(reason);
@@ -123,7 +124,7 @@ export function zip<T, U>(stream1: ReadableStream<T>, stream2: ReadableStream<U>
 
       if (result1.status === "rejected" || result2.status === "rejected") {
         const error = result1.status === "rejected" ? result1.reason : (result2 as PromiseRejectedResult).reason;
-        // A stream that failed is already errored: cancelling it again is a no-op.
+        // Cancelling an errored stream rejects with its stored error, which is rethrown below.
         await cancelAll([reader1.cancel(error), reader2.cancel(error)]).catch(() => {});
         throw error;
       }
