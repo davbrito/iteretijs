@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { zipWith } from "../src/stream.ts";
-import { dumbReadableStream } from "./utils.ts";
+import { zip, zipWith } from "../src/stream.ts";
+import { dumbReadableStream, trackedReadableStream } from "./utils.ts";
 
 async function readAll<T>(stream: ReadableStream<T>) {
   const items: T[] = [];
@@ -48,5 +48,35 @@ describe("zipWith", () => {
       [0, 10],
       [1, 11],
     ]);
+  }, 1000);
+});
+
+describe("zip", () => {
+  /** A stream that never produces anything and records when it is cancelled. */
+  function idleStream() {
+    const state = { cancelled: false };
+    const stream = new ReadableStream<number>({
+      cancel() {
+        state.cancelled = true;
+      },
+    });
+    return { stream, state };
+  }
+
+  it("closes when one source ends while the other is idle, cancelling the idle one", async () => {
+    const idle = idleStream();
+    const reader = zip(dumbReadableStream(0, 0), idle.stream).getReader();
+
+    await expect(reader.read()).resolves.toEqual({ done: true, value: undefined });
+    expect(idle.state.cancelled).toBe(true);
+  }, 1000);
+
+  it("errors when one source fails while the other is idle, cancelling the idle one", async () => {
+    const idle = idleStream();
+    const failing = trackedReadableStream(0, 10, { failOn: 0 });
+    const reader = zip(failing, idle.stream).getReader();
+
+    await expect(reader.read()).rejects.toThrow("source failed");
+    expect(idle.state.cancelled).toBe(true);
   }, 1000);
 });
