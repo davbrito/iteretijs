@@ -1,5 +1,11 @@
 # iteretijs
 
+## 0.3.1
+
+### Patch Changes
+
+- [#42](https://github.com/davbrito/iteretijs/pull/42) [`64c7354`](https://github.com/davbrito/iteretijs/commit/64c73547e92e52ebdbbb3e238afb5ef4e5d99e6b) Thanks [@davbrito](https://github.com/davbrito)! - Releases are now automated with Changesets. Every release has a changelog entry, a git tag and a GitHub Release, and is published to npm with provenance. There are no changes to the library code.
+
 ## 0.3.0
 
 ### Breaking changes
