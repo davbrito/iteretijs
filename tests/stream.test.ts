@@ -4,7 +4,10 @@ import { dumbReadableStream } from "./utils.ts";
 
 async function readAll<T>(stream: ReadableStream<T>) {
   const items: T[] = [];
-  for await (const item of stream) items.push(item);
+  const reader = stream.getReader();
+  for (let r = await reader.read(); !r.done; r = await reader.read()) {
+    items.push(r.value);
+  }
   return items;
 }
 

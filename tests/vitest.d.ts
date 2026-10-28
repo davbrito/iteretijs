@@ -6,7 +6,7 @@ interface CustomMatchers<T = unknown> {
 export * from "vitest";
 
 declare module "vitest" {
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  interface Assertion<T = any> extends CustomMatchers<T> {}
+  interface Assertion<R extends void | Promise<void> = void, T = unknown>
+    extends CustomMatchers<R> {}
   interface AsymmetricMatchersContaining extends CustomMatchers {}
 }
