@@ -50,8 +50,9 @@ export function* zip<T, U>(iterable1: Iterable<T>, iterable2: Iterable<U>): Iter
   }
 
   // An iterator that is mid-`next()`, threw or completed must not get `return()`.
+  // `iter2` is open until its first `next()`, even if `iter1` ends the first round.
   let open1 = false;
-  let open2 = false;
+  let open2 = true;
   let failed = false;
 
   try {
