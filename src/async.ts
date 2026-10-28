@@ -47,17 +47,30 @@ export async function* concat<T>(...iterables: AsyncIterable<T>[]): AsyncItereti
 export async function* zip<T, U>(iterable1: AsyncIterable<T>, iterable2: AsyncIterable<U>): AsyncItereti<[T, U]> {
   const iter1 = iterable1[Symbol.asyncIterator]();
   const iter2 = iterable2[Symbol.asyncIterator]();
+  // An iterator that is mid-`next()`, rejected or completed must not get `return()`.
+  let open1 = true;
+  let open2 = true;
 
-  for (;;) {
-    const [item1, item2] = await Promise.all([iter1.next(), iter2.next()]);
+  try {
+    for (;;) {
+      open1 = open2 = false;
+      // Wait for both to settle so a rejection never leaves the other `next()` in flight.
+      const [result1, result2] = await Promise.allSettled([iter1.next(), iter2.next()]);
+      open1 = result1.status === "fulfilled" && !result1.value.done;
+      open2 = result2.status === "fulfilled" && !result2.value.done;
 
-    if (item1.done || item2.done) {
-      if (!item1.done) await iter1.return?.();
-      if (!item2.done) await iter2.return?.();
-      break;
+      if (result1.status === "rejected") throw result1.reason;
+      if (result2.status === "rejected") throw result2.reason;
+      if (result1.value.done || result2.value.done) break;
+
+      yield [result1.value.value, result2.value.value];
     }
-
-    yield [item1.value, item2.value];
+  } finally {
+    try {
+      if (open1) await iter1.return?.();
+    } finally {
+      if (open2) await iter2.return?.();
+    }
   }
 }
 

@@ -42,16 +42,30 @@ export function* concat<T>(...iterables: Iterable<T>[]): Iterable<T> {
 export function* zip<T, U>(iterable1: Iterable<T>, iterable2: Iterable<U>): Iterable<[T, U]> {
   const iter1 = iterable1[Symbol.iterator]();
   const iter2 = iterable2[Symbol.iterator]();
-  for (;;) {
-    const item1 = iter1.next();
-    const item2 = iter2.next();
+  // An iterator that is mid-`next()`, threw or completed must not get `return()`.
+  let open1 = true;
+  let open2 = true;
 
-    if (item1.done || item2.done) {
-      if (!item1.done) iter1.return?.();
-      if (!item2.done) iter2.return?.();
-      break;
+  try {
+    for (;;) {
+      open1 = false;
+      const item1 = iter1.next();
+      if (item1.done) break;
+      open1 = true;
+
+      open2 = false;
+      const item2 = iter2.next();
+      if (item2.done) break;
+      open2 = true;
+
+      yield [item1.value, item2.value];
     }
-    yield [item1.value, item2.value];
+  } finally {
+    try {
+      if (open1) iter1.return?.();
+    } finally {
+      if (open2) iter2.return?.();
+    }
   }
 }
 
