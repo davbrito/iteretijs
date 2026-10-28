@@ -238,6 +238,19 @@ describe("zip", () => {
       expect(a.returns).toBe(1);
     });
 
+    it("closing the second source when the first one is empty", () => {
+      const b = trackedIterable(0, 10);
+      Array.from(zip([], b));
+      expect(b.returns).toBe(1);
+    });
+
+    it("closing the second source when the first next() throws on the first call", () => {
+      const a = trackedIterable(0, 10, { failOn: 0 });
+      const b = trackedIterable(0, 10);
+      expect(() => Array.from(zip(a, b))).toThrow("source failed");
+      expect(b.returns).toBe(1);
+    });
+
     it("but not the one that already completed", () => {
       const a = trackedIterable(1, 3);
       const b = trackedIterable(1, 10);
