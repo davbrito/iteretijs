@@ -18,3 +18,29 @@ jobs:
       - run: npm run format:check
       - run: npm test -- --run
       - run: npm run build
+      - run: npm run check:package
+      - run: npm pack --dry-run
+
+  changeset:
+    # Dependabot PRs and pushes to main don't need a changeset.
+    if: github.event_name == 'pull_request' && github.actor != 'dependabot[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+      - run: npm ci
+      # Only PRs that touch the published source need a changeset
+      # (use `npx changeset --empty` for internal-only changes).
+      - name: Require a changeset when src/** changes
+        env:
+          BASE: origin/${{ github.base_ref }}
+        run: |
+          if git diff --quiet "$BASE"...HEAD -- src; then
+            echo "No changes in src/**, changeset not required."
+          else
+            npx changeset status --since="$BASE"
+          fi
