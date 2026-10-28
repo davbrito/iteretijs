@@ -26,51 +26,12 @@
     "package.json"
   ],
   "type": "module",
-  "main": "./dist/index.cjs",
-  "module": "./dist/index.js",
-  "types": "./dist/index.d.ts",
   "exports": {
+    ".": "./dist/index.mjs",
+    "./async": "./dist/async.mjs",
+    "./stream": "./dist/stream.mjs",
     "./package.json": "./package.json",
-    ".": {
-      "import": {
-        "types": "./dist/index.d.ts",
-        "default": "./dist/index.js"
-      },
-      "require": {
-        "types": "./dist/index.d.cts",
-        "default": "./dist/index.cjs"
-      }
-    },
-    "./async": {
-      "import": {
-        "types": "./dist/async.d.ts",
-        "default": "./dist/async.js"
-      },
-      "require": {
-        "types": "./dist/async.d.cts",
-        "default": "./dist/async.cjs"
-      }
-    },
-    "./sync": {
-      "import": {
-        "types": "./dist/index.d.ts",
-        "default": "./dist/index.js"
-      },
-      "require": {
-        "types": "./dist/index.d.cts",
-        "default": "./dist/index.cjs"
-      }
-    },
-    "./stream": {
-      "import": {
-        "types": "./dist/stream.d.ts",
-        "default": "./dist/stream.js"
-      },
-      "require": {
-        "types": "./dist/stream.d.cts",
-        "default": "./dist/stream.cjs"
-      }
-    }
+    "./sync": "./dist/index.mjs"
   },
   "scripts": {
     "build": "tsdown",
