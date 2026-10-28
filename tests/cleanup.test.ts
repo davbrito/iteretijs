@@ -1,41 +1,56 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import * as asyncOps from "../src/async.ts";
 import * as syncOps from "../src/index.ts";
 import * as streamOps from "../src/stream.ts";
-import { trackedAsyncIterable, trackedIterable, trackedReadableStream } from "./utils.ts";
+import { asyncExits, exits, trackedAsyncIterable, trackedIterable, trackedReadableStream } from "./utils.ts";
 
 /**
  * Cleanup suite: every exported operator must release its sources.
  *
- * Operators that take no source (`iota`, `range`, `transform`) and consumers that
- * cannot exit early by themselves are listed in `notApplicable` so the coverage
- * check below fails when a new export is added without a decision.
+ * Operators that take no source (`iota`, `range`, `transform`) and consumers that drain the
+ * whole iterable and cannot exit early by themselves (`toArray`, `count`) are listed in
+ * `notApplicable`, so the coverage check below fails when a new export is added without a
+ * decision. `reduce` and `iterateStream` have their own suites further down.
  */
 
 const notApplicable = {
   sync: ["iota", "range"],
-  async: ["toArray", "reduce", "count"],
+  async: ["toArray", "count"],
   stream: ["transform", "iota"],
 };
 
-const syncCases: Record<string, (source: Iterable<number>) => Iterable<unknown>> = {
-  map: (s) => syncOps.map(s, (x) => x),
-  filter: (s) => syncOps.filter(s, () => true),
-  take: (s) => syncOps.take(s, 100),
-  drop: (s) => syncOps.drop(s, 1),
-  enumerate: (s) => syncOps.enumerate(s),
-  concat: (s) => syncOps.concat(s, trackedIterable(0, 100)),
-  zip: (s) => syncOps.zip(s, trackedIterable(0, 100)),
+/**
+ * A case builds the operator over `sources` and says how many times `return()` each source
+ * must have received once the consumer exits after the first item (`returns`). Sources that
+ * the operator never opened, like the second one of `concat`, must not be closed.
+ */
+interface Case<S> {
+  build: (sources: S[]) => Iterable<unknown>;
+  returns: number[];
+}
+interface AsyncCase<S> {
+  build: (sources: S[]) => AsyncIterable<unknown>;
+  returns: number[];
+}
+
+const syncCases: Record<string, Case<Iterable<number>>> = {
+  map: { build: ([a]) => syncOps.map(a, (x) => x), returns: [1] },
+  filter: { build: ([a]) => syncOps.filter(a, () => true), returns: [1] },
+  take: { build: ([a]) => syncOps.take(a, 100), returns: [1] },
+  drop: { build: ([a]) => syncOps.drop(a, 1), returns: [1] },
+  enumerate: { build: ([a]) => syncOps.enumerate(a), returns: [1] },
+  concat: { build: ([a, b]) => syncOps.concat(a, b), returns: [1, 0] },
+  zip: { build: ([a, b]) => syncOps.zip(a, b), returns: [1, 1] },
 };
 
-const asyncCases: Record<string, (source: AsyncIterable<number>) => AsyncIterable<unknown>> = {
-  map: (s) => asyncOps.map(s, (x) => x),
-  filter: (s) => asyncOps.filter(s, () => true),
-  take: (s) => asyncOps.take(s, 100),
-  drop: (s) => asyncOps.drop(s, 1),
-  enumerate: (s) => asyncOps.enumerate(s),
-  concat: (s) => asyncOps.concat(s, trackedAsyncIterable(0, 100)),
-  zip: (s) => asyncOps.zip(s, trackedAsyncIterable(0, 100)),
+const asyncCases: Record<string, AsyncCase<AsyncIterable<number>>> = {
+  map: { build: ([a]) => asyncOps.map(a, (x) => x), returns: [1] },
+  filter: { build: ([a]) => asyncOps.filter(a, () => true), returns: [1] },
+  take: { build: ([a]) => asyncOps.take(a, 100), returns: [1] },
+  drop: { build: ([a]) => asyncOps.drop(a, 1), returns: [1] },
+  enumerate: { build: ([a]) => asyncOps.enumerate(a), returns: [1] },
+  concat: { build: ([a, b]) => asyncOps.concat(a, b), returns: [1, 0] },
+  zip: { build: ([a, b]) => asyncOps.zip(a, b), returns: [1, 1] },
 };
 
 // Each case gets the tracked stream as the first source and returns the readable side.
@@ -52,37 +67,6 @@ const streamCases: Record<string, (source: ReadableStream<number>) => ReadableSt
   zip: (s) => streamOps.zip(s, trackedReadableStream(0, 100)),
 };
 
-/** Cancellation travels through pipes asynchronously: give it a few macrotasks to settle. */
-const settle = () => new Promise<void>((resolve) => setTimeout(resolve, 10));
-
-const exits = {
-  break: (it: Iterable<unknown>) => {
-    for (const _ of it) break;
-  },
-  return: (it: Iterable<unknown>) => {
-    for (const _ of it) return;
-  },
-  throw: (it: Iterable<unknown>) => {
-    try {
-      for (const _ of it) throw new Error("boom");
-    } catch {}
-  },
-};
-
-const asyncExits = {
-  break: async (it: AsyncIterable<unknown>) => {
-    for await (const _ of it) break;
-  },
-  return: async (it: AsyncIterable<unknown>) => {
-    for await (const _ of it) return;
-  },
-  throw: async (it: AsyncIterable<unknown>) => {
-    try {
-      for await (const _ of it) throw new Error("boom");
-    } catch {}
-  },
-};
-
 describe("every exported operator is covered", () => {
   it.each([
     ["sync", syncOps, syncCases],
@@ -91,23 +75,23 @@ describe("every exported operator is covered", () => {
   ] as const)("%s", (name, module, cases) => {
     const exported = Object.keys(module);
     const covered = [...Object.keys(cases), ...notApplicable[name]];
-    // `iterateStream` is the stream -> async iterable bridge and has its own suite below.
-    const extra = name === "async" ? ["iterateStream"] : [];
+    // `iterateStream` (the stream -> async iterable bridge) and `reduce` have their own suites below.
+    const extra = name === "async" ? ["iterateStream", "reduce"] : [];
     expect(exported.sort()).toEqual([...covered, ...extra].sort());
   });
 });
 
 describe("sync operators close their source", () => {
-  describe.each(Object.entries(syncCases))("%s", (_name, op) => {
+  describe.each(Object.entries(syncCases))("%s", (_name, { build, returns }) => {
     it.each(Object.entries(exits))("when the consumer exits with %s", (_exit, exit) => {
-      const source = trackedIterable(1, 100);
-      exit(op(source));
-      expect(source.returns).toBe(1);
+      const sources = returns.map(() => trackedIterable(1, 100));
+      exit(build(sources));
+      expect(sources.map((source) => source.returns)).toEqual(returns);
     });
 
     it("when the source throws, propagating the error", () => {
-      const source = trackedIterable(1, 100, { failOn: 1 });
-      expect(() => Array.from(op(source))).toThrow("source failed");
+      const sources = returns.map((_, i) => trackedIterable(1, 100, { failOn: i === 0 ? 1 : undefined }));
+      expect(() => Array.from(build(sources))).toThrow("source failed");
     });
   });
 
@@ -126,16 +110,16 @@ describe("sync operators close their source", () => {
 });
 
 describe("async operators close their source", () => {
-  describe.each(Object.entries(asyncCases))("%s", (_name, op) => {
+  describe.each(Object.entries(asyncCases))("%s", (_name, { build, returns }) => {
     it.each(Object.entries(asyncExits))("when the consumer exits with %s", async (_exit, exit) => {
-      const source = trackedAsyncIterable(1, 100);
-      await exit(op(source));
-      expect(source.returns).toBe(1);
+      const sources = returns.map(() => trackedAsyncIterable(1, 100));
+      await exit(build(sources));
+      expect(sources.map((source) => source.returns)).toEqual(returns);
     });
 
     it("when the source rejects, propagating the error", async () => {
-      const source = trackedAsyncIterable(1, 100, { failOn: 1 });
-      await expect(asyncOps.toArray(op(source))).rejects.toThrow("source failed");
+      const sources = returns.map((_, i) => trackedAsyncIterable(1, 100, { failOn: i === 0 ? 1 : undefined }));
+      await expect(asyncOps.toArray(build(sources))).rejects.toThrow("source failed");
     });
   });
 
@@ -187,12 +171,13 @@ describe("iterateStream", () => {
 });
 
 /**
- * Leaks found by this suite, skipped until their fixes land (each fix un-skips its test).
+ * Leaks found by this suite, skipped until their fixes land (see #45). Each fix un-skips its tests.
  * They also surface unhandled rejections, so `it.fails` cannot be used to track them.
- *  - concat: cancelling the output leaves the remaining sources open, and a source error
- *    or a cancel surfaces as an unhandled rejection.
- *  - zip: never cancels its sources, and a source error leaves the output hanging.
- *  - zipWith: never cancels the other stream.
+ *  - concat and zip: skipped through `knownLeaks` below, and again in the dedicated test that
+ *    checks every source. `concat` cancels only the source being piped and `zip` never cancels,
+ *    and a source error leaves `zip`'s output hanging.
+ *  - zipWith: not in `knownLeaks`, because its generic cases pass; only the dedicated test at the
+ *    end (the `other` stream is never cancelled) is skipped.
  */
 const knownLeaks = new Set(["concat", "zip"]);
 
@@ -206,8 +191,7 @@ describe("stream operators", () => {
       const reader = output.getReader();
       await reader.read();
       await reader.cancel("stop");
-      await settle();
-      expect(source.cancels).toHaveLength(1);
+      await vi.waitFor(() => expect(source.cancels).toHaveLength(1));
     });
 
     test("propagates a source error to the output", async () => {
@@ -227,9 +211,10 @@ describe("stream operators", () => {
     const reader = (name === "concat" ? streamOps.concat(a, b) : streamOps.zip(a, b)).getReader();
     await reader.read();
     await reader.cancel("stop");
-    await settle();
-    expect(a.cancels).toHaveLength(1);
-    expect(b.cancels).toHaveLength(1);
+    await vi.waitFor(() => {
+      expect(a.cancels).toHaveLength(1);
+      expect(b.cancels).toHaveLength(1);
+    });
   });
 
   it.skip("zipWith cancels the other stream when the output is cancelled", async () => {
@@ -237,7 +222,6 @@ describe("stream operators", () => {
     const reader = trackedReadableStream(1, 100).pipeThrough(streamOps.zipWith(other)).getReader();
     await reader.read();
     await reader.cancel("stop");
-    await settle();
-    expect(other.cancels).toHaveLength(1);
+    await vi.waitFor(() => expect(other.cancels).toHaveLength(1));
   });
 });

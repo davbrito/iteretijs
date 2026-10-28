@@ -167,3 +167,33 @@ export function trackedReadableStream(
   stream.cancels = cancels;
   return stream;
 }
+
+/** The ways a consumer can leave a `for...of` loop early. */
+export const exits = {
+  break: (iterable: Iterable<unknown>) => {
+    for (const _ of iterable) break;
+  },
+  return: (iterable: Iterable<unknown>) => {
+    for (const _ of iterable) return;
+  },
+  throw: (iterable: Iterable<unknown>) => {
+    try {
+      for (const _ of iterable) throw new Error("boom");
+    } catch {}
+  },
+};
+
+/** Async counterpart of {@link exits}. */
+export const asyncExits = {
+  break: async (iterable: AsyncIterable<unknown>) => {
+    for await (const _ of iterable) break;
+  },
+  return: async (iterable: AsyncIterable<unknown>) => {
+    for await (const _ of iterable) return;
+  },
+  throw: async (iterable: AsyncIterable<unknown>) => {
+    try {
+      for await (const _ of iterable) throw new Error("boom");
+    } catch {}
+  },
+};

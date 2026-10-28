@@ -12,7 +12,7 @@ import {
   zip,
   reduce,
 } from "../src/async.ts";
-import { dumbAsyncIterable, dumbReadableStream, trackedAsyncIterable } from "./utils.ts";
+import { asyncExits, dumbAsyncIterable, dumbReadableStream, trackedAsyncIterable } from "./utils.ts";
 
 describe("return an async iterable", () => {
   it("map", () => {
@@ -281,31 +281,10 @@ describe("zip", () => {
   });
 
   describe("closes the sources", () => {
-    it.each([
-      [
-        "break",
-        async (it: AsyncIterable<unknown>) => {
-          for await (const _ of it) break;
-        },
-      ],
-      [
-        "return",
-        async (it: AsyncIterable<unknown>) => {
-          for await (const _ of it) return;
-        },
-      ],
-      [
-        "throw",
-        async (it: AsyncIterable<unknown>) => {
-          try {
-            for await (const _ of it) throw new Error("boom");
-          } catch {}
-        },
-      ],
-    ])("when the consumer exits with %s", async (_name, consume) => {
+    it.each(Object.entries(asyncExits))("when the consumer exits with %s", async (_name, exit) => {
       const a = trackedAsyncIterable(1, 10);
       const b = trackedAsyncIterable(1, 10);
-      await consume(zip(a, b));
+      await exit(zip(a, b));
       expect(a.returns).toBe(1);
       expect(b.returns).toBe(1);
     });

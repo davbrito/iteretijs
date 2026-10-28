@@ -1,6 +1,6 @@
 import { Mock, describe, expect, it, vi } from "vitest";
 import { concat, drop, enumerate, filter, iota, map, range, take, zip } from "../src/index.ts";
-import { dumbIterable, trackedIterable } from "./utils.ts";
+import { dumbIterable, exits, trackedIterable } from "./utils.ts";
 
 function expectFnCalls(iter: Iterator<unknown>, fn: Mock, expecteds: unknown[]): void {
   expect(fn).not.toHaveBeenCalled();
@@ -198,32 +198,10 @@ describe("zip", () => {
   });
 
   describe("closes the sources", () => {
-    it.each([
-      [
-        "break",
-        (it: Iterable<unknown>) => {
-          for (const _ of it) break;
-        },
-      ],
-      [
-        "return",
-        (it: Iterable<unknown>) =>
-          (() => {
-            for (const _ of it) return;
-          })(),
-      ],
-      [
-        "throw",
-        (it: Iterable<unknown>) => {
-          try {
-            for (const _ of it) throw new Error("boom");
-          } catch {}
-        },
-      ],
-    ])("when the consumer exits with %s", (_name, consume) => {
+    it.each(Object.entries(exits))("when the consumer exits with %s", (_name, exit) => {
       const a = trackedIterable(1, 10);
       const b = trackedIterable(1, 10);
-      consume(zip(a, b));
+      exit(zip(a, b));
       expect(a.returns).toBe(1);
       expect(b.returns).toBe(1);
     });
