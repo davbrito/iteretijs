@@ -62,8 +62,6 @@ export function zipWith<T, U>(
       reader.releaseLock();
     },
     transform: async (data, controller) => {
-      if (await reader.closed) return;
-
       const value = await reader.read();
 
       if (value.done) {
