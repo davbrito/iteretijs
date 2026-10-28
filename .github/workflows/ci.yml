@@ -4,6 +4,7 @@ on:
   push:
     branches: [main]
   pull_request:
+  workflow_dispatch:
 
 jobs:
   check:
@@ -18,3 +19,5 @@ jobs:
       - run: npm run format:check
       - run: npm test -- --run
       - run: npm run build
+      - run: npm run check:package
+      - run: npm pack --dry-run

@@ -1,0 +1,114 @@
+# Opens (or updates) a "Version Packages" PR when changesets are pending on main.
+# Merging that PR publishes to npm with trusted publishing (OIDC), then creates
+# the vX.Y.Z tag and the GitHub Release. No npm token is needed.
+# Docs: https://changesets.dev/guide/automating
+#       https://docs.npmjs.com/trusted-publishers
+#
+# Setup required outside this repo (see #40):
+#   - Settings > Actions > General > "Allow GitHub Actions to create and approve pull requests".
+#   - A GitHub environment named `npm`.
+#   - npm trusted publisher pointing at this workflow (release.yml) and the `npm` environment.
+
+name: Release
+
+on:
+  push:
+    branches: [main]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions: {} # each job declares its own permissions
+
+jobs:
+  select-mode:
+    # Don't run on forks
+    if: github.repository == 'davbrito/iteretijs'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+    outputs:
+      mode: ${{ steps.select-mode.outputs.mode }}
+      publish-plan-artifact-id: ${{ steps.select-mode.outputs.publish-plan-artifact-id }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          package-manager-cache: false # avoid cache poisoning
+      - run: npm ci
+      - id: select-mode
+        uses: changesets/action/select-mode@v2
+
+  version:
+    needs: select-mode
+    if: needs.select-mode.outputs.mode == 'version'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: write # version commit
+      pull-requests: write # Version Packages PR
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          package-manager-cache: false # avoid cache poisoning
+      - run: npm ci
+      - uses: changesets/action/version@v2
+        with:
+          script: npm run version
+          commit-message: "chore: version packages"
+          pr-title: "chore: version packages"
+
+  pack:
+    needs: select-mode
+    if: needs.select-mode.outputs.mode == 'publish'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+    outputs:
+      pack-dir-artifact-id: ${{ steps.pack.outputs.pack-dir-artifact-id }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          package-manager-cache: false # avoid cache poisoning
+      - run: npm ci
+      - run: npm run build
+      - id: pack
+        uses: changesets/action/pack@v2
+        with:
+          publish-plan-artifact-id: ${{ needs.select-mode.outputs.publish-plan-artifact-id }}
+
+  publish:
+    needs: pack
+    runs-on: ubuntu-latest
+    environment: npm
+    timeout-minutes: 20
+    permissions:
+      contents: write # tag and GitHub Release
+      id-token: write # npm trusted publishing (OIDC), only on this job
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          registry-url: https://registry.npmjs.org/
+          package-manager-cache: false # avoid cache poisoning
+      - run: npm ci
+      - uses: changesets/action/publish@v2
+        with:
+          pack-dir-artifact-id: ${{ needs.pack.outputs.pack-dir-artifact-id }}
