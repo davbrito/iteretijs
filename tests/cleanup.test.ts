@@ -170,22 +170,9 @@ describe("iterateStream", () => {
   });
 });
 
-/**
- * Leaks found by this suite, skipped until their fixes land (see #45). Each fix un-skips its tests.
- * They also surface unhandled rejections, so `it.fails` cannot be used to track them.
- *  - concat and zip: skipped through `knownLeaks` below, and again in the dedicated test that
- *    checks every source. `concat` cancels only the source being piped and `zip` never cancels,
- *    and a source error leaves `zip`'s output hanging.
- *  - zipWith: not in `knownLeaks`, because its generic cases pass; only the dedicated test at the
- *    end (the `other` stream is never cancelled) is skipped.
- */
-const knownLeaks = new Set(["concat", "zip"]);
-
 describe("stream operators", () => {
-  describe.each(Object.entries(streamCases))("%s", (name, op) => {
-    const test = knownLeaks.has(name) ? it.skip : it;
-
-    test("cancels the source when the output is cancelled", async () => {
+  describe.each(Object.entries(streamCases))("%s", (_name, op) => {
+    it("cancels the source when the output is cancelled", async () => {
       const source = trackedReadableStream(1, 100);
       const output = op(source);
       const reader = output.getReader();
@@ -194,7 +181,7 @@ describe("stream operators", () => {
       await vi.waitFor(() => expect(source.cancels).toHaveLength(1));
     });
 
-    test("propagates a source error to the output", async () => {
+    it("propagates a source error to the output", async () => {
       const source = trackedReadableStream(1, 100, { failOn: 1 });
       const reader = op(source).getReader();
       await expect(
@@ -205,7 +192,7 @@ describe("stream operators", () => {
     });
   });
 
-  it.skip.each(["concat", "zip"] as const)("%s cancels every source when the output is cancelled", async (name) => {
+  it.each(["concat", "zip"] as const)("%s cancels every source when the output is cancelled", async (name) => {
     const a = trackedReadableStream(1, 100);
     const b = trackedReadableStream(1, 100);
     const reader = (name === "concat" ? streamOps.concat(a, b) : streamOps.zip(a, b)).getReader();
@@ -217,7 +204,7 @@ describe("stream operators", () => {
     });
   });
 
-  it.skip("zipWith cancels the other stream when the output is cancelled", async () => {
+  it("zipWith cancels the other stream when the output is cancelled", async () => {
     const other = trackedReadableStream(1, 100);
     const reader = trackedReadableStream(1, 100).pipeThrough(streamOps.zipWith(other)).getReader();
     await reader.read();
