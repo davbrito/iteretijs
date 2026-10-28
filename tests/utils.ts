@@ -62,26 +62,28 @@ export function dumbReadableStream(from: number, to: number): ReadableStream<num
 export interface Tracked {
   /** Number of times `return()` was called on the source. */
   returns: number;
-  /** Number of times `throw()` was called on the source. */
-  throws: number;
   /** Whether the source reported `done: true` by itself. */
   completed: boolean;
 }
 
-/**
- * A sync source that records `return()` calls. If `failOn` is given, the
- * `next()` call with that (0-based) index throws `error`.
- */
+interface TrackedOptions {
+  /** The `next()` call with this (0-based) index throws (rejects, for async sources). */
+  failOn?: number;
+  error?: unknown;
+  /** `return()` throws (rejects, for async sources) this after being recorded. */
+  returnError?: unknown;
+}
+
+/** A sync source that records `return()` calls. */
 export function trackedIterable(
   from: number,
   to: number,
-  { failOn, error = new Error("source failed") }: { failOn?: number; error?: unknown } = {},
+  { failOn, error = new Error("source failed"), returnError }: TrackedOptions = {},
 ): IterableIterator<number> & Tracked {
   let i = from;
   let calls = 0;
   const tracked: IterableIterator<number> & Tracked = {
     returns: 0,
-    throws: 0,
     completed: false,
     next() {
       if (calls++ === failOn) throw error;
@@ -92,12 +94,8 @@ export function trackedIterable(
     return(value) {
       tracked.returns++;
       i = to;
+      if (returnError !== undefined) throw returnError;
       return { done: true, value };
-    },
-    throw(e) {
-      tracked.throws++;
-      i = to;
-      throw e;
     },
     [Symbol.iterator]() {
       return this;
@@ -106,42 +104,32 @@ export function trackedIterable(
   return tracked;
 }
 
-/** Async counterpart of {@link trackedIterable}; `failOn` makes `next()` reject. */
+/** Async counterpart of {@link trackedIterable}, wrapping it the way `dumbAsyncIterable` does. */
 export function trackedAsyncIterable(
   from: number,
   to: number,
-  { failOn, error = new Error("source failed") }: { failOn?: number; error?: unknown } = {},
+  options?: TrackedOptions,
 ): AsyncIterableIterator<number> & Tracked {
-  let i = from;
-  let calls = 0;
-  const tracked: AsyncIterableIterator<number> & Tracked = {
-    returns: 0,
-    throws: 0,
-    completed: false,
+  const iterator = trackedIterable(from, to, options);
+  return {
+    get returns() {
+      return iterator.returns;
+    },
+    get completed() {
+      return iterator.completed;
+    },
     async next() {
       await Promise.resolve();
-      if (calls++ === failOn) throw error;
-      if (i < to) return { done: false, value: i++ };
-      tracked.completed = true;
-      return { done: true, value: undefined };
+      return iterator.next();
     },
     async return(value) {
       await Promise.resolve();
-      tracked.returns++;
-      i = to;
-      return { done: true, value };
-    },
-    async throw(e) {
-      await Promise.resolve();
-      tracked.throws++;
-      i = to;
-      throw e;
+      return iterator.return!(value);
     },
     [Symbol.asyncIterator]() {
       return this;
     },
   };
-  return tracked;
 }
 
 export interface TrackedStream<T> extends ReadableStream<T> {

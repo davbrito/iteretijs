@@ -239,6 +239,18 @@ describe("concat", () => {
   });
 });
 
+/** A hand-written async iterator whose `next()` is not an `async` function and throws. */
+function syncThrowingAsyncIterator(): AsyncIterableIterator<number> {
+  return {
+    next() {
+      throw new Error("sync failure");
+    },
+    [Symbol.asyncIterator]() {
+      return this;
+    },
+  };
+}
+
 describe("zip", () => {
   it("zips two async iterables", async () => {
     const iterable1 = dumbAsyncIterable(1, 4);
@@ -309,6 +321,38 @@ describe("zip", () => {
       const a = trackedAsyncIterable(1, 10);
       const b = trackedAsyncIterable(1, 10, { failOn: 1 });
       await expect(toArray(zip(a, b))).rejects.toThrow("source failed");
+      expect(a.returns).toBe(1);
+    });
+
+    it("keeping the original error when closing the other source also rejects", async () => {
+      const a = trackedAsyncIterable(1, 10, { returnError: new Error("return failed") });
+      const b = trackedAsyncIterable(1, 10, { failOn: 1 });
+      await expect(toArray(zip(a, b))).rejects.toThrow("source failed");
+      expect(a.returns).toBe(1);
+    });
+
+    it("when getting the second iterator throws", async () => {
+      const a = trackedAsyncIterable(1, 10);
+      const bad: AsyncIterable<number> = {
+        [Symbol.asyncIterator]() {
+          throw new Error("bad iterable");
+        },
+      };
+      await expect(toArray(zip(a, bad))).rejects.toThrow("bad iterable");
+      expect(a.returns).toBe(1);
+    });
+
+    it("when the first next() throws synchronously, closing the second", async () => {
+      const a = syncThrowingAsyncIterator();
+      const b = trackedAsyncIterable(1, 10);
+      await expect(toArray(zip(a, b))).rejects.toThrow("sync failure");
+      expect(b.returns).toBe(1);
+    });
+
+    it("when the second next() throws synchronously, closing the first", async () => {
+      const a = trackedAsyncIterable(1, 10);
+      const b = syncThrowingAsyncIterator();
+      await expect(toArray(zip(a, b))).rejects.toThrow("sync failure");
       expect(a.returns).toBe(1);
     });
 

@@ -242,6 +242,24 @@ describe("zip", () => {
       expect(a.returns).toBe(1);
     });
 
+    it("keeping the original error when closing the other source also throws", () => {
+      const a = trackedIterable(1, 10, { returnError: new Error("return failed") });
+      const b = trackedIterable(1, 10, { failOn: 1 });
+      expect(() => Array.from(zip(a, b))).toThrow("source failed");
+      expect(a.returns).toBe(1);
+    });
+
+    it("when getting the second iterator throws", () => {
+      const a = trackedIterable(1, 10);
+      const bad: Iterable<number> = {
+        [Symbol.iterator]() {
+          throw new Error("bad iterable");
+        },
+      };
+      expect(() => Array.from(zip(a, bad))).toThrow("bad iterable");
+      expect(a.returns).toBe(1);
+    });
+
     it("but not the one that already completed", () => {
       const a = trackedIterable(1, 3);
       const b = trackedIterable(1, 10);
