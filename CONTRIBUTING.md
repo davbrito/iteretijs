@@ -6,6 +6,17 @@ The following is a set of guidelines for contributing to Iteretijs. These are mo
 
 Iteretijs is open to contributions. Feel free to open issues or PRs that contributes to the development of the librery.
 
+## Fixing a bug
+
+Every bug fix starts with a failing test that proves the bug exists. Don't write the fix first.
+
+1. **Write the test first.** Add a test that reproduces the bug and assert the correct behavior. Run it and check that it fails for the reason described in the issue, not because of a typo or a broken setup.
+2. **Commit it on its own,** before the fix, for example `test: add failing tests for zip not closing its sources`. Reviewers can check out that commit and watch the test fail.
+3. **Fix the bug** in a separate commit, for example `fix: close zip sources on early exit`. The same test now passes, and the rest of the suite still passes.
+4. **Show the failure in the PR description:** paste the failing test output from step 1, or link to a CI run of that commit.
+
+Don't change the test in the fix commit to make it pass. If the test turns out to be wrong, fix it in its own commit and explain why in the PR.
+
 ## Adding a changeset
 
 Releases are driven by [Changesets](https://changesets.dev). Each change that users should know about carries a small Markdown file in `.changeset/`, written in the same PR as the code. Commit messages do not drive releases, but we keep using [Conventional Commits](https://www.conventionalcommits.org) for readable history.
