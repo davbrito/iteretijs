@@ -1,22 +1,8 @@
 import { Mock, describe, expect, it, vi } from "vitest";
-import {
-  concat,
-  drop,
-  enumerate,
-  filter,
-  iota,
-  map,
-  range,
-  take,
-  zip,
-} from "../src/index.ts";
+import { concat, drop, enumerate, filter, iota, map, range, take, zip } from "../src/index.ts";
 import { dumbIterable } from "./utils.ts";
 
-function expectFnCalls(
-  iter: Iterator<unknown>,
-  fn: Mock,
-  expecteds: unknown[],
-): void {
+function expectFnCalls(iter: Iterator<unknown>, fn: Mock, expecteds: unknown[]): void {
   expect(fn).not.toHaveBeenCalled();
 
   for (let i = 0; !iter.next().done; i++) {
@@ -34,17 +20,13 @@ function expectFnCalls(
   });
 }
 
-function expectReturnWhenDone(
-  input: Iterator<unknown>,
-  output: Iterator<unknown>,
-): void {
+function expectReturnWhenDone(input: Iterator<unknown>, output: Iterator<unknown>): void {
   const returnSpy = vi.spyOn(input, "return");
   expect(returnSpy).not.toHaveBeenCalled();
   while (!output.next().done);
   expect(returnSpy).toHaveBeenCalledTimes(1);
   expect(returnSpy).lastCalledWith();
 }
-
 
 describe("return an iterable", () => {
   it("map", () => {
@@ -115,17 +97,14 @@ describe("filter", () => {
     [dumbIterable(1, 5), (x: number) => x % 2 === 0, [2, 4]],
     [dumbIterable(14, 20), (x: number) => x % 2 === 0, [14, 16, 18]],
     [[23, 43, 12, 67, 95, 2, 45, 2], (x: number) => x > 30, [43, 67, 95, 45]],
-  ])(
-    "return an iterable with the correct values",
-    (input, predicate, expected) => {
-      const iterable = filter(input, predicate);
-      const iterator = iterable[Symbol.iterator]();
-      expected.forEach((value) => {
-        expect(iterator.next()).toEqual({ done: false, value });
-      });
-      expect(iterator.next()).toEqual({ done: true, value: undefined });
-    },
-  );
+  ])("return an iterable with the correct values", (input, predicate, expected) => {
+    const iterable = filter(input, predicate);
+    const iterator = iterable[Symbol.iterator]();
+    expected.forEach((value) => {
+      expect(iterator.next()).toEqual({ done: false, value });
+    });
+    expect(iterator.next()).toEqual({ done: true, value: undefined });
+  });
 
   it("calls the callback with the correct arguments", () => {
     const cb = vi.fn((x) => x);
@@ -223,13 +202,7 @@ describe("iota", () => {
   it("returns an iterable of numbers starting from 0", () => {
     const iterable = iota();
     const iter = iterable[Symbol.iterator]();
-    expect([
-      iter.next(),
-      iter.next(),
-      iter.next(),
-      iter.next(),
-      iter.next(),
-    ]).toEqual([
+    expect([iter.next(), iter.next(), iter.next(), iter.next(), iter.next()]).toEqual([
       { done: false, value: 0 },
       { done: false, value: 1 },
       { done: false, value: 2 },
@@ -241,13 +214,7 @@ describe("iota", () => {
   it("accepts a start value", () => {
     const iterable = iota(10);
     const iter = iterable[Symbol.iterator]();
-    expect([
-      iter.next(),
-      iter.next(),
-      iter.next(),
-      iter.next(),
-      iter.next(),
-    ]).toEqual([
+    expect([iter.next(), iter.next(), iter.next(), iter.next(), iter.next()]).toEqual([
       { done: false, value: 10 },
       { done: false, value: 11 },
       { done: false, value: 12 },
@@ -259,13 +226,7 @@ describe("iota", () => {
   it("accepts a step value", () => {
     const iterable = iota(0, 2);
     const iter = iterable[Symbol.iterator]();
-    expect([
-      iter.next(),
-      iter.next(),
-      iter.next(),
-      iter.next(),
-      iter.next(),
-    ]).toEqual([
+    expect([iter.next(), iter.next(), iter.next(), iter.next(), iter.next()]).toEqual([
       { done: false, value: 0 },
       { done: false, value: 2 },
       { done: false, value: 4 },
@@ -279,13 +240,7 @@ describe("iota", () => {
   it("accepts a start and step value", () => {
     const iterable = iota(10, 2);
     const iter = iterable[Symbol.iterator]();
-    expect([
-      iter.next(),
-      iter.next(),
-      iter.next(),
-      iter.next(),
-      iter.next(),
-    ]).toEqual([
+    expect([iter.next(), iter.next(), iter.next(), iter.next(), iter.next()]).toEqual([
       { done: false, value: 10 },
       { done: false, value: 12 },
       { done: false, value: 14 },

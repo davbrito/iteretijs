@@ -1,16 +1,10 @@
-export function* map<T, U>(
-  iterable: Iterable<T>,
-  mapper: (value: T) => U,
-): Iterable<U> {
+export function* map<T, U>(iterable: Iterable<T>, mapper: (value: T) => U): Iterable<U> {
   for (const item of iterable) {
     yield mapper(item);
   }
 }
 
-export function* filter<T>(
-  iterable: Iterable<T>,
-  predicate: (value: T) => boolean,
-): Iterable<T> {
+export function* filter<T>(iterable: Iterable<T>, predicate: (value: T) => boolean): Iterable<T> {
   for (const item of iterable) {
     if (predicate(item)) {
       yield item;
@@ -45,10 +39,7 @@ export function* concat<T>(...iterables: Iterable<T>[]): Iterable<T> {
   }
 }
 
-export function* zip<T, U>(
-  iterable1: Iterable<T>,
-  iterable2: Iterable<U>,
-): Iterable<[T, U]> {
+export function* zip<T, U>(iterable1: Iterable<T>, iterable2: Iterable<U>): Iterable<[T, U]> {
   const iter1 = iterable1[Symbol.iterator]();
   const iter2 = iterable2[Symbol.iterator]();
   for (;;) {

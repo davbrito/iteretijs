@@ -1,9 +1,8 @@
-/// <reference types="vitest" />
 import { glob } from "glob";
 import { fileURLToPath } from "node:url";
-import { UserConfig, defineConfig } from "vite";
-import dts from "vite-plugin-dts";
-import pkg from "./package.json" assert { type: "json" };
+import { defineConfig, type ViteUserConfig } from "vitest/config";
+import dts from "unplugin-dts/vite";
+import pkg from "./package.json" with { type: "json" };
 
 const sourceDir = fileURLToPath(new URL("./src", import.meta.url));
 
@@ -30,7 +29,7 @@ export default defineConfig(async () => {
       emptyOutDir: true,
       minify: false,
       sourcemap: true,
-      rollupOptions: {
+      rolldownOptions: {
         external: Object.keys({
           ...pkg["dependencies"],
           ...pkg["peerDependencies"],
@@ -44,5 +43,5 @@ export default defineConfig(async () => {
       uiBase: "/",
       setupFiles: "tests/setup.ts",
     },
-  } satisfies UserConfig;
+  } satisfies ViteUserConfig;
 });

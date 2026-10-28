@@ -5,12 +5,12 @@
     "target": "ES2022",
     "module": "ES2022",
     "moduleResolution": "Bundler",
-    "lib": ["es2023", "dom"],
+    "lib": ["es2023", "esnext.disposable", "dom"],
     "outDir": "dist",
     "declaration": true,
     "declarationMap": true,
     "noEmit": true,
-    "allowImportingTsExtensions": true,
+    "allowImportingTsExtensions": true
   },
   "include": ["src/**/*.ts", "tests/**/*.ts"]
 }

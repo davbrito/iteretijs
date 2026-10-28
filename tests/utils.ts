@@ -1,7 +1,4 @@
-export function dumbIterable(
-  from: number,
-  to: number,
-): IterableIterator<number> {
+export function dumbIterable(from: number, to: number): IterableIterator<number> {
   let i = from;
   return {
     next() {
@@ -24,10 +21,7 @@ export function dumbIterable(
   };
 }
 
-export function dumbAsyncIterable(
-  from: number,
-  to: number,
-): AsyncIterableIterator<number> {
+export function dumbAsyncIterable(from: number, to: number): AsyncIterableIterator<number> {
   const iterator = dumbIterable(from, to);
 
   return {
@@ -49,10 +43,7 @@ export function dumbAsyncIterable(
   };
 }
 
-export function dumbReadableStream(
-  from: number,
-  to: number,
-): ReadableStream<number> {
+export function dumbReadableStream(from: number, to: number): ReadableStream<number> {
   let i = from;
   return new ReadableStream({
     async pull(controller) {

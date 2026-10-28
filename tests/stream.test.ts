@@ -4,15 +4,16 @@ import { dumbReadableStream } from "./utils.ts";
 
 async function readAll<T>(stream: ReadableStream<T>) {
   const items: T[] = [];
-  for await (const item of stream) items.push(item);
+  const reader = stream.getReader();
+  for (let r = await reader.read(); !r.done; r = await reader.read()) {
+    items.push(r.value);
+  }
   return items;
 }
 
 describe("zipWith", () => {
   it("pairs each value with the next value of the other stream", async () => {
-    const result = dumbReadableStream(0, 3).pipeThrough(
-      zipWith(dumbReadableStream(10, 13)),
-    );
+    const result = dumbReadableStream(0, 3).pipeThrough(zipWith(dumbReadableStream(10, 13)));
 
     expect(await readAll(result)).toEqual([
       [0, 10],
@@ -22,9 +23,7 @@ describe("zipWith", () => {
   }, 1000);
 
   it("stops emitting when the other stream is shorter", async () => {
-    const result = dumbReadableStream(0, 5).pipeThrough(
-      zipWith(dumbReadableStream(10, 12)),
-    );
+    const result = dumbReadableStream(0, 5).pipeThrough(zipWith(dumbReadableStream(10, 12)));
 
     expect(await readAll(result)).toEqual([
       [0, 10],

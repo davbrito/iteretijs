@@ -2,17 +2,13 @@ export function transform<T, U>(transform: TransformerTransformCallback<T, U>) {
   return new TransformStream<T, U>({ transform });
 }
 
-export function map<T, U>(
-  mapper: (value: T) => U | Promise<U>,
-): TransformStream<T, U> {
+export function map<T, U>(mapper: (value: T) => U | Promise<U>): TransformStream<T, U> {
   return transform(async (data, controller) => {
     controller.enqueue(await mapper(data));
   });
 }
 
-export function filter<T>(
-  predicate: (value: T) => boolean | Promise<boolean>,
-): TransformStream<T, T> {
+export function filter<T>(predicate: (value: T) => boolean | Promise<boolean>): TransformStream<T, T> {
   return transform(async (data, controller) => {
     if (await predicate(data)) {
       controller.enqueue(data);
@@ -43,19 +39,13 @@ export function concat<T>(...streams: ReadableStream<T>[]): ReadableStream<T> {
   const { readable, writable } = new TransformStream();
 
   streams
-    .reduce(
-      (prev, stream) =>
-        prev.then(() => stream.pipeTo(writable, { preventClose: true })),
-      Promise.resolve(),
-    )
+    .reduce((prev, stream) => prev.then(() => stream.pipeTo(writable, { preventClose: true })), Promise.resolve())
     .then(() => writable.close());
 
   return readable;
 }
 
-export function zipWith<T, U>(
-  stream: ReadableStream<U>,
-): TransformStream<T, [T, U]> {
+export function zipWith<T, U>(stream: ReadableStream<U>): TransformStream<T, [T, U]> {
   const reader = stream.getReader();
   return new TransformStream({
     flush() {
@@ -73,10 +63,7 @@ export function zipWith<T, U>(
   });
 }
 
-export function zip<T, U>(
-  stream1: ReadableStream<T>,
-  stream2: ReadableStream<U>,
-): ReadableStream<[T, U]> {
+export function zip<T, U>(stream1: ReadableStream<T>, stream2: ReadableStream<U>): ReadableStream<[T, U]> {
   const { readable, writable } = new TransformStream<[T, U], [T, U]>();
 
   (async function () {
@@ -86,10 +73,7 @@ export function zip<T, U>(
 
     try {
       for (;;) {
-        const [item1, item2] = await Promise.all([
-          reader1.read(),
-          reader2.read(),
-        ]);
+        const [item1, item2] = await Promise.all([reader1.read(), reader2.read()]);
 
         if (item1.done || item2.done) {
           break;

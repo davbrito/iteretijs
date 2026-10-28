@@ -20,9 +20,7 @@ describe("return an async iterable", () => {
   });
 
   it("filter", () => {
-    expect(
-      filter(dumbAsyncIterable(1, 4), (x) => x % 2 === 0),
-    ).toBeAsyncIterable();
+    expect(filter(dumbAsyncIterable(1, 4), (x) => x % 2 === 0)).toBeAsyncIterable();
   });
 
   it("take", () => {
@@ -38,15 +36,11 @@ describe("return an async iterable", () => {
   });
 
   it("zip", () => {
-    expect(
-      zip(dumbAsyncIterable(1, 4), dumbAsyncIterable(1, 4)),
-    ).toBeAsyncIterable();
+    expect(zip(dumbAsyncIterable(1, 4), dumbAsyncIterable(1, 4))).toBeAsyncIterable();
   });
 
   it("concat", () => {
-    expect(
-      concat(dumbAsyncIterable(1, 4), dumbAsyncIterable(1, 4)),
-    ).toBeAsyncIterable();
+    expect(concat(dumbAsyncIterable(1, 4), dumbAsyncIterable(1, 4))).toBeAsyncIterable();
   });
 
   it("iterateStream", async () => {
@@ -70,9 +64,7 @@ describe("map", () => {
   });
 
   it("awaits values", async () => {
-    const iterator = map(dumbAsyncIterable(1, 4), (x) =>
-      Promise.resolve(x + 1),
-    );
+    const iterator = map(dumbAsyncIterable(1, 4), (x) => Promise.resolve(x + 1));
     await expect(iterator.next()).resolves.toEqual({ done: false, value: 2 });
     await expect(iterator.next()).resolves.toEqual({ done: false, value: 3 });
     await expect(iterator.next()).resolves.toEqual({ done: false, value: 4 });
@@ -94,9 +86,7 @@ describe("filter", () => {
   });
 
   it("awaits values", async () => {
-    const iterator = filter(dumbAsyncIterable(1, 4), (x) =>
-      Promise.resolve(x % 2 === 0),
-    );
+    const iterator = filter(dumbAsyncIterable(1, 4), (x) => Promise.resolve(x % 2 === 0));
     await expect(iterator.next()).resolves.toEqual({ done: false, value: 2 });
     await expect(iterator.next()).resolves.toEqual({
       done: true,
@@ -110,11 +100,11 @@ describe("iterateStream", () => {
     const stream = dumbReadableStream(1, 5);
 
     const iterator = iterateStream(stream);
-    expect(iterator.next()).resolves.toEqual({ done: false, value: 1 });
-    expect(iterator.next()).resolves.toEqual({ done: false, value: 2 });
-    expect(iterator.next()).resolves.toEqual({ done: false, value: 3 });
-    expect(iterator.next()).resolves.toEqual({ done: false, value: 4 });
-    expect(iterator.next()).resolves.toEqual({
+    await expect(iterator.next()).resolves.toEqual({ done: false, value: 1 });
+    await expect(iterator.next()).resolves.toEqual({ done: false, value: 2 });
+    await expect(iterator.next()).resolves.toEqual({ done: false, value: 3 });
+    await expect(iterator.next()).resolves.toEqual({ done: false, value: 4 });
+    await expect(iterator.next()).resolves.toEqual({
       done: true,
       value: undefined,
     });
@@ -205,7 +195,7 @@ describe("take", () => {
   });
 
   it("returns an empty async iterable if the input async iterable is empty", async () => {
-    expect(toArray(dumbAsyncIterable(1, 0))).resolves.toEqual([]);
+    await expect(toArray(dumbAsyncIterable(1, 0))).resolves.toEqual([]);
   });
 });
 
@@ -223,7 +213,7 @@ describe("drop", () => {
   });
 
   it("returns an empty async iterable if the input async iterable is empty", async () => {
-    expect(toArray(dumbAsyncIterable(1, 0))).resolves.toEqual([]);
+    await expect(toArray(dumbAsyncIterable(1, 0))).resolves.toEqual([]);
   });
 });
 
