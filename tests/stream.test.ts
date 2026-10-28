@@ -1,0 +1,53 @@
+import { describe, expect, it } from "vitest";
+import { zipWith } from "../src/stream.ts";
+import { dumbReadableStream } from "./utils.ts";
+
+async function readAll<T>(stream: ReadableStream<T>) {
+  const items: T[] = [];
+  for await (const item of stream) items.push(item);
+  return items;
+}
+
+describe("zipWith", () => {
+  it("pairs each value with the next value of the other stream", async () => {
+    const result = dumbReadableStream(0, 3).pipeThrough(
+      zipWith(dumbReadableStream(10, 13)),
+    );
+
+    expect(await readAll(result)).toEqual([
+      [0, 10],
+      [1, 11],
+      [2, 12],
+    ]);
+  }, 1000);
+
+  it("stops emitting when the other stream is shorter", async () => {
+    const result = dumbReadableStream(0, 5).pipeThrough(
+      zipWith(dumbReadableStream(10, 12)),
+    );
+
+    expect(await readAll(result)).toEqual([
+      [0, 10],
+      [1, 11],
+    ]);
+  }, 1000);
+
+  it("does not wait for the other stream to close before emitting", async () => {
+    const values = [10, 11, 12];
+    const openStream = new ReadableStream<number>({
+      pull(controller) {
+        const next = values.shift();
+        if (next !== undefined) controller.enqueue(next);
+        // never closes: the next pull stays pending
+        else return new Promise(() => {});
+      },
+    });
+
+    const result = dumbReadableStream(0, 2).pipeThrough(zipWith(openStream));
+
+    expect(await readAll(result)).toEqual([
+      [0, 10],
+      [1, 11],
+    ]);
+  }, 1000);
+});
