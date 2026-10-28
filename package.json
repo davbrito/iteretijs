@@ -44,7 +44,6 @@
     "format:check": "oxfmt --check",
     "changeset": "changeset",
     "version": "changeset version && npm install --package-lock-only",
-    "release": "npm run build && changeset publish",
     "check:package": "publint && attw --pack . --profile esm-only"
   },
   "devDependencies": {
