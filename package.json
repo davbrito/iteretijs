@@ -42,7 +42,10 @@
     "build": "vite build",
     "test": "vitest",
     "test:ui": "vitest --ui",
-    "coverage": "vitest run --coverage"
+    "coverage": "vitest run --coverage",
+    "lint": "oxlint",
+    "format": "oxfmt",
+    "format:check": "oxfmt --check"
   },
   "repository": {
     "type": "git",
@@ -62,18 +65,14 @@
   },
   "homepage": "https://github.com/davbrito/iteretijs#readme",
   "devDependencies": {
-    "@eslint/js": "^10.0.1",
     "@types/node": "^24.0.0",
     "@vitest/coverage-v8": "^1.0.4",
     "@vitest/ui": "^1.0.4",
-    "eslint": "^10.13.0",
-    "eslint-config-prettier": "^10.1.8",
     "glob": "^10.3.10",
-    "globals": "^17.13.0",
     "happy-dom": "^12.10.3",
-    "prettier": "^3.1.1",
+    "oxfmt": "^0.75.0",
+    "oxlint": "^1.90.0",
     "typescript": "^5.3.3",
-    "typescript-eslint": "^8.72.1",
     "vite": "^5.0.8",
     "vite-plugin-dts": "^3.6.4",
     "vitest": "^1.0.4"
