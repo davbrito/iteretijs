@@ -1,9 +1,6 @@
 export interface AsyncItereti<T> extends AsyncGenerator<T, void, undefined> {}
 
-export async function* map<T, U>(
-  iterable: AsyncIterable<T>,
-  mapper: (value: T) => U | Promise<U>,
-): AsyncItereti<U> {
+export async function* map<T, U>(iterable: AsyncIterable<T>, mapper: (value: T) => U | Promise<U>): AsyncItereti<U> {
   for await (const item of iterable) {
     yield mapper(item);
   }
@@ -20,10 +17,7 @@ export async function* filter<T>(
   }
 }
 
-export async function* take<T>(
-  iterable: AsyncIterable<T>,
-  count: number,
-): AsyncItereti<T> {
+export async function* take<T>(iterable: AsyncIterable<T>, count: number): AsyncItereti<T> {
   let i = 0;
   for await (const item of iterable) {
     if (i >= count) {
@@ -34,10 +28,7 @@ export async function* take<T>(
   }
 }
 
-export async function* drop<T>(
-  iterable: AsyncIterable<T>,
-  count: number,
-): AsyncItereti<T> {
+export async function* drop<T>(iterable: AsyncIterable<T>, count: number): AsyncItereti<T> {
   let i = 0;
   for await (const item of iterable) {
     if (i >= count) {
@@ -47,18 +38,13 @@ export async function* drop<T>(
   }
 }
 
-export async function* concat<T>(
-  ...iterables: AsyncIterable<T>[]
-): AsyncItereti<T> {
+export async function* concat<T>(...iterables: AsyncIterable<T>[]): AsyncItereti<T> {
   for (const iterable of iterables) {
     yield* iterable;
   }
 }
 
-export async function* zip<T, U>(
-  iterable1: AsyncIterable<T>,
-  iterable2: AsyncIterable<U>,
-): AsyncItereti<[T, U]> {
+export async function* zip<T, U>(iterable1: AsyncIterable<T>, iterable2: AsyncIterable<U>): AsyncItereti<[T, U]> {
   const iter1 = iterable1[Symbol.asyncIterator]();
   const iter2 = iterable2[Symbol.asyncIterator]();
 
@@ -79,10 +65,7 @@ interface IterateStreamOptions {
   preventCancel?: boolean;
 }
 
-export function iterateStream<T>(
-  stream: ReadableStream<T>,
-  options?: IterateStreamOptions,
-): AsyncItereti<T> {
+export function iterateStream<T>(stream: ReadableStream<T>, options?: IterateStreamOptions): AsyncItereti<T> {
   const reader = stream.getReader();
   const preventCancel = options?.preventCancel ?? false;
 
@@ -118,9 +101,7 @@ export function iterateStream<T>(
   };
 }
 
-export async function* enumerate<T>(
-  iterable: AsyncIterable<T>,
-): AsyncItereti<[number, T]> {
+export async function* enumerate<T>(iterable: AsyncIterable<T>): AsyncItereti<[number, T]> {
   let index = 0;
   for await (const item of iterable) {
     yield [index, item];
@@ -146,7 +127,7 @@ export async function reduce<T, U>(
   let accumulator = initialValue;
   for await (const item of iterable) {
     // try {
-      accumulator = await reducer(accumulator, item);
+    accumulator = await reducer(accumulator, item);
     // } catch (error) {
     //   console.log("error in", error);
     //   throw error;
