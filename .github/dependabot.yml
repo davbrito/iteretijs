@@ -6,10 +6,13 @@ updates:
       interval: weekly
     open-pull-requests-limit: 10
     groups:
-      dev-dependencies:
+      dev-minor:
         dependency-type: development
         update-types:
           - minor
+      dev-patch:
+        dependency-type: development
+        update-types:
           - patch
 
   - package-ecosystem: github-actions
