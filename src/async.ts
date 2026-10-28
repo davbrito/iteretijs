@@ -112,6 +112,9 @@ export function iterateStream<T>(
       reader.releaseLock();
       throw e;
     },
+    async [Symbol.asyncDispose]() {
+      await this.return();
+    },
   };
 }
 
