@@ -1,0 +1,59 @@
+# Opens (or updates) a "Version Packages" PR when changesets are pending on main.
+# Merging that PR publishes to npm with trusted publishing (OIDC), then creates
+# the vX.Y.Z tag and the GitHub Release. No npm token is needed.
+# For more information see: https://docs.npmjs.com/trusted-publishers
+#
+# Setup required outside this repo (see #40):
+#   - GitHub App with contents and pull-requests write access, stored as the
+#     RELEASE_APP_CLIENT_ID variable and RELEASE_APP_PRIVATE_KEY secret. A PR opened
+#     with GITHUB_TOKEN would not trigger ci.yml.
+#   - A GitHub environment named `npm`.
+#   - npm trusted publisher pointing at this workflow (release.yml) and the `npm` environment.
+
+name: Release
+
+on:
+  push:
+    branches: [main]
+
+concurrency: ${{ github.workflow }}-${{ github.ref }}
+
+jobs:
+  release:
+    # Don't run on forks
+    if: github.repository == 'davbrito/iteretijs'
+    runs-on: ubuntu-latest
+    environment: npm
+    permissions:
+      contents: write # tags and GitHub Releases
+      pull-requests: write # Version Packages PR
+      id-token: write # npm trusted publishing (OIDC)
+    steps:
+      - uses: actions/create-github-app-token@v3
+        id: app-token
+        with:
+          client-id: ${{ vars.RELEASE_APP_CLIENT_ID }}
+          private-key: ${{ secrets.RELEASE_APP_PRIVATE_KEY }}
+      - uses: actions/checkout@v7
+        with:
+          token: ${{ steps.app-token.outputs.token }}
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          registry-url: https://registry.npmjs.org/
+      - run: npm ci
+      - run: npm run lint
+      - run: npm run format:check
+      - run: npm test -- --run
+      - run: npm run build
+      - run: npm run check:package
+      - uses: changesets/action@v1.9.0
+        with:
+          version: npm run version
+          publish: npm run release
+          title: "chore: version packages"
+          commit: "chore: version packages"
+          createGithubReleases: true
+        env:
+          GITHUB_TOKEN: ${{ steps.app-token.outputs.token }}
+          NPM_CONFIG_PROVENANCE: "true"
