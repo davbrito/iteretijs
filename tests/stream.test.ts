@@ -49,6 +49,21 @@ describe("zipWith", () => {
       [1, 11],
     ]);
   }, 1000);
+
+  it("does not error a finished output when the other stream errors after the last pair", async () => {
+    let controller!: ReadableStreamDefaultController<number>;
+    const other = new ReadableStream<number>({
+      start(c) {
+        controller = c;
+        c.enqueue(10);
+      },
+    });
+    const reader = dumbReadableStream(0, 1).pipeThrough(zipWith(other)).getReader();
+
+    expect(await reader.read()).toEqual({ done: false, value: [0, 10] });
+    controller.error(new Error("late"));
+    await expect(reader.read()).resolves.toEqual({ done: true, value: undefined });
+  }, 1000);
 });
 
 describe("zip", () => {
