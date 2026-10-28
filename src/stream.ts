@@ -105,8 +105,21 @@ export function zip<T, U>(stream1: ReadableStream<T>, stream2: ReadableStream<U>
 
   return new ReadableStream<[T, U]>({
     async pull(controller) {
+      // Cancelling the other reader as soon as one read ends or fails settles its pending read
+      // with `done`, so an idle source cannot keep the output waiting.
+      const read = <V>(reader: ReadableStreamDefaultReader<V>, other: ReadableStreamDefaultReader<unknown>) =>
+        reader.read().then(
+          (result) => {
+            if (result.done) other.cancel().catch(() => {});
+            return result;
+          },
+          (error) => {
+            other.cancel(error).catch(() => {});
+            throw error;
+          },
+        );
       // Wait for both reads, so a failure never leaves the other one in flight.
-      const [result1, result2] = await Promise.allSettled([reader1.read(), reader2.read()]);
+      const [result1, result2] = await Promise.allSettled([read(reader1, reader2), read(reader2, reader1)]);
 
       if (result1.status === "rejected" || result2.status === "rejected") {
         const error = result1.status === "rejected" ? result1.reason : (result2 as PromiseRejectedResult).reason;
