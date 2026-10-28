@@ -1,0 +1,11 @@
+{
+  "$schema": "./node_modules/oxlint/configuration_schema.json",
+  "plugins": ["typescript"],
+  "categories": { "correctness": "error" },
+  "env": { "browser": true, "node": true, "es2021": true },
+  "ignorePatterns": ["dist", "coverage"],
+  "rules": {
+    "typescript/no-unused-vars": ["error", { "varsIgnorePattern": "^_" }],
+    "typescript/no-empty-object-type": ["error", { "allowInterfaces": "with-single-extends" }]
+  }
+}
