@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { zip, zipWith } from "../src/stream.ts";
 import { dumbReadableStream, trackedReadableStream } from "./utils.ts";
 
@@ -31,6 +31,17 @@ describe("zipWith", () => {
     ]);
   }, 1000);
 
+  it("closes the output and cancels the main stream once the other stream ends", async () => {
+    const main = trackedReadableStream(0, 50);
+    const result = main.pipeThrough(zipWith(dumbReadableStream(10, 12)));
+
+    expect(await readAll(result)).toEqual([
+      [0, 10],
+      [1, 11],
+    ]);
+    await vi.waitFor(() => expect(main.cancels).toHaveLength(1));
+  }, 1000);
+
   it("does not wait for the other stream to close before emitting", async () => {
     const values = [10, 11, 12];
     const openStream = new ReadableStream<number>({
@@ -61,8 +72,66 @@ describe("zipWith", () => {
     const reader = dumbReadableStream(0, 1).pipeThrough(zipWith(other)).getReader();
 
     expect(await reader.read()).toEqual({ done: false, value: [0, 10] });
+    // `other` is read ahead, so its failure is seen at once while the main stream may still produce
+    // items: let the end of the main stream reach the transformer before `other` fails.
+    await new Promise((resolve) => setTimeout(resolve, 0));
     controller.error(new Error("late"));
     await expect(reader.read()).resolves.toEqual({ done: true, value: undefined });
+  }, 1000);
+
+  it("closes when the other stream ends while the main stream is idle, cancelling the main one", async () => {
+    let cancelled = false;
+    const main = new ReadableStream<number>({
+      start(controller) {
+        controller.enqueue(1);
+      },
+      cancel() {
+        cancelled = true;
+      },
+    });
+    const other = new ReadableStream<number>({
+      start(controller) {
+        controller.enqueue(10);
+        controller.close();
+      },
+    });
+    const reader = main.pipeThrough(zipWith(other)).getReader();
+
+    expect(await reader.read()).toEqual({ done: false, value: [1, 10] });
+    await expect(reader.read()).resolves.toEqual({ done: true, value: undefined });
+    expect(cancelled).toBe(true);
+  }, 1000);
+
+  it("releases the other stream when it ends first", async () => {
+    const main = new ReadableStream<number>({
+      start(controller) {
+        controller.enqueue(1);
+        controller.enqueue(2);
+      },
+    });
+    const other = new ReadableStream<number>({
+      start(controller) {
+        controller.close();
+      },
+    });
+    const reader = main.pipeThrough(zipWith(other)).getReader();
+
+    expect(await reader.read()).toEqual({ done: true, value: undefined });
+    expect(other.locked).toBe(false);
+  }, 1000);
+
+  it("errors the output when the other stream fails while the main stream is idle", async () => {
+    let cancelled = false;
+    const main = new ReadableStream<number>({
+      cancel() {
+        cancelled = true;
+      },
+    });
+    const other = trackedReadableStream(0, 10, { failOn: 0 });
+    const reader = main.pipeThrough(zipWith(other)).getReader();
+
+    await expect(reader.read()).rejects.toThrow("source failed");
+    expect(cancelled).toBe(true);
   }, 1000);
 });
 
