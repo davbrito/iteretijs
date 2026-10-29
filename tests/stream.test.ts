@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { debounce, take, throttle, zip, zipWith } from "../src/stream.ts";
+import { batch, debounce, take, throttle, zip, zipWith } from "../src/stream.ts";
 import { dumbReadableStream, trackedReadableStream } from "./utils.ts";
 
 async function readAll<T>(stream: ReadableStream<T>) {
@@ -235,5 +235,55 @@ describe.each([
     } finally {
       vi.useRealTimers();
     }
+  });
+});
+
+describe("batch", () => {
+  const run = (items: number[], size: number) =>
+    readAll(
+      new ReadableStream<number>({
+        start(c) {
+          items.forEach((i) => c.enqueue(i));
+          c.close();
+        },
+      }).pipeThrough(batch(size)),
+    );
+
+  it("groups chunks and flushes the last partial batch", async () => {
+    expect(await run([1, 2, 3, 4, 5], 2)).toEqual([[1, 2], [3, 4], [5]]);
+  });
+
+  it("does not emit an empty batch when the size divides the length", async () => {
+    expect(await run([1, 2, 3, 4], 2)).toEqual([
+      [1, 2],
+      [3, 4],
+    ]);
+  });
+
+  it("emits nothing for an empty stream", async () => {
+    expect(await run([], 3)).toEqual([]);
+  });
+
+  it("size 1 wraps every chunk", async () => {
+    expect(await run([1, 2], 1)).toEqual([[1], [2]]);
+  });
+
+  it.each([0, -1, 1.5, NaN, Infinity])("throws a RangeError for size %s", (size) => {
+    expect(() => batch(size)).toThrow(RangeError);
+  });
+
+  it("respects backpressure", async () => {
+    let pulls = 0;
+    const source = new ReadableStream<number>({
+      pull(controller) {
+        controller.enqueue(pulls++);
+      },
+    });
+    const reader = source.pipeThrough(batch(3)).getReader();
+    expect((await reader.read()).value).toEqual([0, 1, 2]);
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    // An endless source is only read as far as the queues allow, not drained.
+    expect(pulls).toBeLessThan(20);
+    await reader.cancel();
   });
 });

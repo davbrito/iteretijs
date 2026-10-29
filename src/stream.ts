@@ -41,6 +41,30 @@ export function drop<T>(count: number): TransformStream<T, T> {
   });
 }
 
+/**
+ * Groups the chunks into arrays of `size`; the last array holds the remainder when the stream ends.
+ * `Iterator.prototype.chunks` only covers iterators, not streams.
+ * Throws a `RangeError` unless `size` is a positive integer.
+ */
+export function batch<T>(size: number): TransformStream<T, T[]> {
+  if (!Number.isInteger(size) || size < 1) {
+    throw new RangeError(`batch size must be a positive integer, got ${size}`);
+  }
+  let current: T[] = [];
+  return new TransformStream<T, T[]>({
+    transform(data, controller) {
+      current.push(data);
+      if (current.length === size) {
+        controller.enqueue(current);
+        current = [];
+      }
+    },
+    flush(controller) {
+      if (current.length > 0) controller.enqueue(current);
+    },
+  });
+}
+
 export function concat<T>(...streams: ReadableStream<T>[]): ReadableStream<T> {
   let index = 0;
   let reader: ReadableStreamDefaultReader<T> | undefined;
