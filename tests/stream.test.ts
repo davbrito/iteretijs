@@ -75,6 +75,61 @@ describe("zipWith", () => {
     controller.error(new Error("late"));
     await expect(reader.read()).resolves.toEqual({ done: true, value: undefined });
   }, 1000);
+
+  it("closes when the other stream ends while the main stream is idle, cancelling the main one", async () => {
+    let cancelled = false;
+    const main = new ReadableStream<number>({
+      start(controller) {
+        controller.enqueue(1);
+      },
+      cancel() {
+        cancelled = true;
+      },
+    });
+    const other = new ReadableStream<number>({
+      start(controller) {
+        controller.enqueue(10);
+        controller.close();
+      },
+    });
+    const reader = main.pipeThrough(zipWith(other)).getReader();
+
+    expect(await reader.read()).toEqual({ done: false, value: [1, 10] });
+    await expect(reader.read()).resolves.toEqual({ done: true, value: undefined });
+    expect(cancelled).toBe(true);
+  }, 1000);
+
+  it("releases the other stream when it ends first", async () => {
+    const main = new ReadableStream<number>({
+      start(controller) {
+        controller.enqueue(1);
+        controller.enqueue(2);
+      },
+    });
+    const other = new ReadableStream<number>({
+      start(controller) {
+        controller.close();
+      },
+    });
+    const reader = main.pipeThrough(zipWith(other)).getReader();
+
+    expect(await reader.read()).toEqual({ done: true, value: undefined });
+    expect(other.locked).toBe(false);
+  }, 1000);
+
+  it("errors the output when the other stream fails while the main stream is idle", async () => {
+    let cancelled = false;
+    const main = new ReadableStream<number>({
+      cancel() {
+        cancelled = true;
+      },
+    });
+    const other = trackedReadableStream(0, 10, { failOn: 0 });
+    const reader = main.pipeThrough(zipWith(other)).getReader();
+
+    await expect(reader.read()).rejects.toThrow("source failed");
+    expect(cancelled).toBe(true);
+  }, 1000);
 });
 
 describe("zip", () => {
