@@ -289,6 +289,129 @@ export function throttle<T>(ms: number): TransformStream<T> {
   return new TransformStream(transformer);
 }
 
+export interface BufferTimeOptions {
+  /** Emit as soon as this many chunks were collected, without waiting for the interval. */
+  maxSize?: number;
+}
+
+/**
+ * Collects the chunks and emits them as an array every `ms`; an interval without chunks emits
+ * nothing. The chunks still buffered when the stream ends are emitted as a last array.
+ * The timer ignores backpressure, so a slow consumer makes the arrays queue up.
+ * Throws a `RangeError` unless `maxSize` is a positive integer.
+ */
+export function bufferTime<T>(ms: number, { maxSize = Infinity }: BufferTimeOptions = {}): TransformStream<T, T[]> {
+  if (maxSize !== Infinity && (!Number.isInteger(maxSize) || maxSize < 1)) {
+    throw new RangeError(`bufferTime maxSize must be a positive integer, got ${maxSize}`);
+  }
+  let timer: ReturnType<typeof setInterval> | undefined;
+  let current: T[] = [];
+  const clear = () => {
+    clearInterval(timer);
+    timer = undefined;
+  };
+  const emit = (controller: TransformStreamDefaultController<T[]>) => {
+    if (current.length === 0) return;
+    const batch = current;
+    current = [];
+    controller.enqueue(batch);
+  };
+  const transformer: CancellableTransformer<T, T[]> = {
+    start(controller) {
+      timer = setInterval(() => emit(controller), ms);
+    },
+    transform(data, controller) {
+      current.push(data);
+      if (current.length >= maxSize) emit(controller);
+    },
+    flush(controller) {
+      clear();
+      emit(controller);
+    },
+    cancel: clear,
+  };
+  return new TransformStream(transformer);
+}
+
+/**
+ * Emits the latest chunk every `ms`, if a new one arrived since the last emission.
+ * A chunk still pending when the stream ends is emitted instead of being dropped.
+ * The timer ignores backpressure.
+ */
+export function sample<T>(ms: number): TransformStream<T, T> {
+  let timer: ReturnType<typeof setInterval> | undefined;
+  let latest: { value: T } | undefined;
+  const clear = () => {
+    clearInterval(timer);
+    timer = undefined;
+  };
+  const emit = (controller: TransformStreamDefaultController<T>) => {
+    if (!latest) return;
+    const { value } = latest;
+    latest = undefined;
+    controller.enqueue(value);
+  };
+  const transformer: CancellableTransformer<T, T> = {
+    start(controller) {
+      timer = setInterval(() => emit(controller), ms);
+    },
+    transform(data) {
+      latest = { value: data };
+    },
+    flush(controller) {
+      clear();
+      emit(controller);
+    },
+    cancel: clear,
+  };
+  return new TransformStream(transformer);
+}
+
+export interface TimeoutOptions {
+  /**
+   * Called instead of erroring the stream. The output then closes and the source is cancelled.
+   */
+  onTimeout?: () => void;
+}
+
+/**
+ * Passes the chunks through and errors the stream with a `TimeoutError` when `ms` go by without
+ * one, counting from the moment the stream is created. The error cancels the source.
+ */
+export function timeout<T>(ms: number, { onTimeout }: TimeoutOptions = {}): TransformStream<T, T> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const clear = () => {
+    clearTimeout(timer);
+    timer = undefined;
+  };
+  const arm = (controller: TransformStreamDefaultController<T>) => {
+    timer = setTimeout(() => {
+      timer = undefined;
+      if (!onTimeout) {
+        controller.error(new DOMException(`No chunk arrived within ${ms}ms`, "TimeoutError"));
+        return;
+      }
+      try {
+        onTimeout();
+        controller.terminate();
+      } catch (error) {
+        controller.error(error);
+      }
+    }, ms);
+  };
+  const transformer: CancellableTransformer<T, T> = {
+    start: arm,
+    transform(data, controller) {
+      clear();
+      controller.enqueue(data);
+      arm(controller);
+    },
+    flush: clear,
+    cancel: clear,
+  };
+  return new TransformStream(transformer);
+}
+
 /** Splits text into lines. `crAsTerminator` also treats a lone `\r` as a line break (SSE rules). */
 function createLineSplitter(emit: (line: string) => void, crAsTerminator: boolean) {
   // Fragments of the line still waiting for its terminator; only each new chunk is scanned.
