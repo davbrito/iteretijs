@@ -21,4 +21,6 @@ Deprecate the APIs that a native feature or an active TC39 proposal already cove
 + Iterator.zip([a, b])
 ```
 
+Async `concat` and `zip` are not deprecated yet, because the platform has nothing that covers them: the async iterator helpers proposal has neither, and `Iterator.concat` / `Iterator.zip` only take sync iterables. They are planned for deprecation in v0.5, and for removal in v1.0, once there is general support. Their JSDoc says so.
+
 Polyfills for the proposals that are not shipped yet: core-js.

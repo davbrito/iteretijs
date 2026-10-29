@@ -58,12 +58,25 @@ export async function* drop<T>(iterable: AsyncIterable<T>, count: number): Async
   }
 }
 
+/**
+ * Not deprecated yet. Planned for deprecation in v0.5 and removal in v1.0, once the platform has general
+ * support for it: the async iterator helpers proposal has no `concat`.
+ *
+ * Suggestion: chain the iterables with `yield*` in an async generator:
+ * `async function* () { yield* a; yield* b; }`.
+ */
 export async function* concat<T>(...iterables: AsyncIterable<T>[]): AsyncGenerator<T, void, unknown> {
   for (const iterable of iterables) {
     yield* iterable;
   }
 }
 
+/**
+ * Not deprecated yet. Planned for deprecation in v0.5 and removal in v1.0, once the platform has general
+ * support for it: `Iterator.zip` only takes sync iterables and the async iterator helpers proposal has no `zip`.
+ *
+ * Suggestion: keep using it until then; the replacement will be named here when it is deprecated.
+ */
 export async function* zip<T, U>(
   iterable1: AsyncIterable<T>,
   iterable2: AsyncIterable<U>,
