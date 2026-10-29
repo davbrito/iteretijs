@@ -91,6 +91,9 @@ export function zipWith<T, U>(stream: ReadableStream<U>): TransformStream<T, [T,
       const value = await reader.read();
 
       if (value.done) {
+        // Nothing can be paired anymore: close the output and cancel the main stream instead of
+        // reading it to the end and dropping its items.
+        controller.terminate();
         return;
       }
 
