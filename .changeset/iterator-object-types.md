@@ -1,5 +1,5 @@
 ---
-"iteretijs": patch
+"iteretijs": minor
 ---
 
 Type the results as iterator objects so the native helpers are visible to TypeScript.
@@ -12,6 +12,9 @@ range(0, 10)
   .toArray(); // type-checks now
 ```
 
-The async operators and `iterateStream` now return `AsyncIteratorObject<T, undefined, unknown>` instead of the custom `AsyncItereti` interface, which stays as a deprecated alias. TypeScript has no async iterator helpers, so this only changes the base type. As on any `AsyncIteratorObject`, `return()` and `throw()` are optional in the types, so call them with `iterator.return?.()`.
+The async operators and `iterateStream` now return `AsyncIteratorObject<T, undefined, unknown>` instead of the custom `AsyncItereti` interface, which stays as a deprecated alias. TypeScript has no async iterator helpers, so this only changes the base type.
 
-`IteratorObject` and `AsyncIteratorObject` need TypeScript 5.6 or later.
+**Breaking, types only:**
+
+- `return()` and `throw()` are optional on `AsyncIteratorObject`. Code that calls them on the result of an async operator, or on a value typed `AsyncItereti`, must now use `iterator.return?.()`.
+- `IteratorObject` and `AsyncIteratorObject` need TypeScript 5.6 or later. Older versions fail with `Cannot find name 'IteratorObject'`.
