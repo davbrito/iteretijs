@@ -117,7 +117,7 @@ describe("iterateStream", () => {
     });
 
     const iterator = iterateStream(stream);
-    await iterator.return();
+    await iterator.return!();
 
     expect(cancel).toHaveBeenCalled();
   });
@@ -126,7 +126,7 @@ describe("iterateStream", () => {
     const stream = new ReadableStream();
     const iterator = iterateStream(stream);
     expect(stream.locked).toBe(true);
-    await iterator.return();
+    await iterator.return!();
     expect(stream.locked).toBe(false);
   });
 
@@ -138,7 +138,7 @@ describe("iterateStream", () => {
     const error = new Error("Test error");
 
     const iterator = iterateStream(stream);
-    await expect(iterator.throw(error)).rejects.toThrow(error);
+    await expect(iterator.throw!(error)).rejects.toThrow(error);
 
     expect(cancel).toHaveBeenCalledWith(error);
   });
@@ -148,7 +148,7 @@ describe("iterateStream", () => {
     const iterator = iterateStream(stream);
     expect(stream.locked).toBe(true);
     const error = new Error("Test error");
-    await expect(iterator.throw(error)).rejects.toThrow(error);
+    await expect(iterator.throw!(error)).rejects.toThrow(error);
     expect(stream.locked).toBe(false);
   });
 
@@ -159,7 +159,7 @@ describe("iterateStream", () => {
     });
 
     const iterator = iterateStream(stream, { preventCancel: true });
-    await iterator.return();
+    await iterator.return!();
     expect(cancel).not.toHaveBeenCalled();
     await stream.cancel();
   });
@@ -168,7 +168,7 @@ describe("iterateStream", () => {
     const stream = new ReadableStream();
     const iterator = iterateStream(stream, { preventCancel: true });
     expect(stream.locked).toBe(true);
-    await iterator.return();
+    await iterator.return!();
     expect(stream.locked).toBe(false);
     await stream.cancel();
   });
