@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { zip, zipWith } from "../src/stream.ts";
+import { take, zip, zipWith } from "../src/stream.ts";
 import { dumbReadableStream, trackedReadableStream } from "./utils.ts";
 
 async function readAll<T>(stream: ReadableStream<T>) {
@@ -132,6 +132,54 @@ describe("zipWith", () => {
 
     await expect(reader.read()).rejects.toThrow("source failed");
     expect(cancelled).toBe(true);
+  }, 1000);
+});
+
+describe("take", () => {
+  it("emits the first chunks, closes the output and cancels the source", async () => {
+    const source = trackedReadableStream(0, 50);
+    const result = source.pipeThrough(take(2));
+
+    expect(await readAll(result)).toEqual([0, 1]);
+    await vi.waitFor(() => expect(source.cancels).toHaveLength(1));
+  }, 1000);
+
+  it("closes the output right after the last chunk, even if the source is idle", async () => {
+    let cancelled = false;
+    const idle = new ReadableStream<number>({
+      start(controller) {
+        controller.enqueue(1);
+        controller.enqueue(2);
+        // never closes and never produces a third chunk
+      },
+      cancel() {
+        cancelled = true;
+      },
+    });
+    const reader = idle.pipeThrough(take(2)).getReader();
+
+    expect(await reader.read()).toEqual({ done: false, value: 1 });
+    expect(await reader.read()).toEqual({ done: false, value: 2 });
+    await expect(reader.read()).resolves.toEqual({ done: true, value: undefined });
+    expect(cancelled).toBe(true);
+  }, 1000);
+
+  it.each([0, -1])(
+    "take(%i) closes the output without a chunk and cancels the source",
+    async (count) => {
+      const source = trackedReadableStream(0, 50);
+      const reader = source.pipeThrough(take(count)).getReader();
+
+      await expect(reader.read()).resolves.toEqual({ done: true, value: undefined });
+      await vi.waitFor(() => expect(source.cancels).toHaveLength(1));
+    },
+    1000,
+  );
+
+  it("emits everything when the source has fewer chunks than the count", async () => {
+    const result = dumbReadableStream(0, 3).pipeThrough(take(10));
+
+    expect(await readAll(result)).toEqual([0, 1, 2]);
   }, 1000);
 });
 
