@@ -262,3 +262,168 @@ export function throttle<T>(ms: number): TransformStream<T> {
     },
   });
 }
+
+/** Splits text into lines. `crAsTerminator` also treats a lone `\r` as a line break (SSE rules). */
+function createLineSplitter(emit: (line: string) => void, crAsTerminator: boolean) {
+  // Fragments of the line still waiting for its terminator; only each new chunk is scanned.
+  const pending: string[] = [];
+  let pendingCR = false;
+
+  const emitLine = (tail: string) => {
+    let line = pending.length ? pending.join("") + tail : tail;
+    pending.length = 0;
+    if (!crAsTerminator && line.endsWith("\r")) line = line.slice(0, -1);
+    emit(line);
+  };
+
+  return {
+    push(chunk: string) {
+      if (chunk === "") return;
+      let start = 0;
+      if (pendingCR) {
+        pendingCR = false;
+        if (chunk[0] === "\n") start = 1;
+      }
+      if (crAsTerminator) {
+        for (let i = start; i < chunk.length; i++) {
+          const code = chunk.charCodeAt(i);
+          if (code !== 10 && code !== 13) continue;
+          emitLine(chunk.slice(start, i));
+          if (code === 13) {
+            if (i + 1 === chunk.length) pendingCR = true;
+            else if (chunk[i + 1] === "\n") i++;
+          }
+          start = i + 1;
+        }
+      } else {
+        for (let nl = chunk.indexOf("\n", start); nl !== -1; nl = chunk.indexOf("\n", start)) {
+          emitLine(chunk.slice(start, nl));
+          start = nl + 1;
+        }
+      }
+      if (start < chunk.length) pending.push(chunk.slice(start));
+    },
+    /** Emits the final partial line, if any. */
+    flush() {
+      if (pending.length) emit(pending.join(""));
+      pending.length = 0;
+    },
+  };
+}
+
+/**
+ * Splits a stream of text chunks into lines, however the chunks are cut.
+ * Handles `\n` and `\r\n` (even when split across chunks) and flushes the final line without terminator.
+ */
+export function lines(): TransformStream<string, string> {
+  let splitter: ReturnType<typeof createLineSplitter>;
+  return new TransformStream<string, string>({
+    start(controller) {
+      splitter = createLineSplitter((line) => controller.enqueue(line), false);
+    },
+    transform: (chunk) => splitter.push(chunk),
+    flush: () => splitter.flush(),
+  });
+}
+
+export interface NdjsonOptions {
+  /**
+   * What to do with a line that is not valid JSON.
+   * `"throw"` (default) errors the stream; a function is called with the error and the line, and the line is skipped.
+   */
+  onError?: "throw" | ((error: unknown, line: string) => void);
+}
+
+/** Parses newline-delimited JSON from a stream of text chunks. Blank lines are skipped. */
+export function ndjson<T = unknown>(options: NdjsonOptions = {}): TransformStream<string, T> {
+  const { onError = "throw" } = options;
+  let splitter: ReturnType<typeof createLineSplitter>;
+  return new TransformStream<string, T>({
+    start(controller) {
+      splitter = createLineSplitter((line) => {
+        if (line.trim() === "") return;
+        let value: T;
+        try {
+          value = JSON.parse(line);
+        } catch (error) {
+          if (onError === "throw") throw error;
+          onError(error, line);
+          return;
+        }
+        controller.enqueue(value);
+      }, false);
+    },
+    transform: (chunk) => splitter.push(chunk),
+    flush: () => splitter.flush(),
+  });
+}
+
+export interface ServerSentEvent {
+  /** The event type; `"message"` when the event has no `event` field. */
+  event: string;
+  data: string;
+  /** The last event ID seen on the stream, `""` if none. */
+  id: string;
+  /** The last reconnection time, in milliseconds, set on the stream; `undefined` if none was. */
+  retry: number | undefined;
+}
+
+/**
+ * Parses Server-Sent Events from a stream of text chunks, following the
+ * [WHATWG EventSource parsing rules](https://html.spec.whatwg.org/multipage/server-sent-events.html#parsing-an-event-stream):
+ * multi-line `data`, comments, `retry`, a leading BOM, and `\n`, `\r` or `\r\n` line endings.
+ * An event that is still incomplete when the stream ends is discarded.
+ */
+export function sse(): TransformStream<string, ServerSentEvent> {
+  let splitter: ReturnType<typeof createLineSplitter>;
+  return new TransformStream<string, ServerSentEvent>({
+    start(controller) {
+      let first = true;
+      let data = "";
+      let hasData = false;
+      let event = "";
+      let id = "";
+      let retry: number | undefined;
+
+      splitter = createLineSplitter((line) => {
+        if (first) {
+          first = false;
+          if (line.startsWith("\uFEFF")) line = line.slice(1);
+        }
+        if (line === "") {
+          if (hasData) {
+            controller.enqueue({ event: event || "message", data, id, retry });
+          }
+          data = "";
+          hasData = false;
+          event = "";
+          return;
+        }
+        if (line.startsWith(":")) return;
+
+        const colon = line.indexOf(":");
+        const field = colon === -1 ? line : line.slice(0, colon);
+        let value = colon === -1 ? "" : line.slice(colon + 1);
+        if (value.startsWith(" ")) value = value.slice(1);
+
+        switch (field) {
+          case "event":
+            event = value;
+            break;
+          case "data":
+            data = hasData ? `${data}\n${value}` : value;
+            hasData = true;
+            break;
+          case "id":
+            if (!value.includes("\0")) id = value;
+            break;
+          case "retry":
+            if (/^\d+$/.test(value)) retry = Number(value);
+            break;
+        }
+      }, true);
+    },
+    transform: (chunk) => splitter.push(chunk),
+    flush: () => splitter.flush(),
+  });
+}
