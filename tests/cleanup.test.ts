@@ -66,6 +66,7 @@ const streamCases: Record<string, (source: ReadableStream<number>) => ReadableSt
   zipWith: (s) => s.pipeThrough(streamOps.zipWith(trackedReadableStream(0, 100))),
   concat: (s) => streamOps.concat(s, trackedReadableStream(0, 100)),
   zip: (s) => streamOps.zip(s, trackedReadableStream(0, 100)),
+  merge: (s) => streamOps.merge(s, trackedReadableStream(0, 100)),
 };
 
 describe("every exported operator is covered", () => {
@@ -193,10 +194,11 @@ describe("stream operators", () => {
     });
   });
 
-  it.each(["concat", "zip"] as const)("%s cancels every source when the output is cancelled", async (name) => {
+  it.each(["concat", "zip", "merge"] as const)("%s cancels every source when the output is cancelled", async (name) => {
     const a = trackedReadableStream(1, 100);
     const b = trackedReadableStream(1, 100);
-    const reader = (name === "concat" ? streamOps.concat(a, b) : streamOps.zip(a, b)).getReader();
+    const combine: (a: ReadableStream<number>, b: ReadableStream<number>) => ReadableStream<unknown> = streamOps[name];
+    const reader = combine(a, b).getReader();
     await reader.read();
     await reader.cancel("stop");
     await vi.waitFor(() => {
