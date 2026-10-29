@@ -49,7 +49,7 @@ enumerate(["a", "b", "c"])
 
 ### Stream operators
 
-Each operator that transforms a stream is a `TransformStream`, so you apply it with `pipeThrough`. Cancelling the output cancels the source, and an error in the source reaches the output. One known exception: `take` does not close its output after `count` chunks, so with an endless source it keeps reading it (see [#54](https://github.com/davbrito/iteretijs/issues/54)).
+Each operator that transforms a stream is a `TransformStream`, so you apply it with `pipeThrough`. Cancelling the output cancels the source, and an error in the source reaches the output.
 
 ```ts
 import { drop, filter, map, take } from "iteretijs/stream";

@@ -17,11 +17,17 @@ export function filter<T>(predicate: (value: T) => boolean | Promise<boolean>): 
 }
 
 export function take<T>(count: number): TransformStream<T, T> {
-  return transform(async (data, controller) => {
-    if (count > 0) {
+  return new TransformStream<T, T>({
+    start(controller) {
+      // Nothing to emit: close the output and cancel the source without waiting for a chunk.
+      if (!(count > 0)) controller.terminate();
+    },
+    transform(data, controller) {
       controller.enqueue(data);
-      count--;
-    }
+      // That was the last chunk: close the output and cancel the source right away instead of
+      // reading it to the end and dropping its chunks.
+      if (--count <= 0) controller.terminate();
+    },
   });
 }
 
