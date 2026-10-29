@@ -224,7 +224,11 @@ export function iota(n = Infinity): ReadableStream<number> {
 
 export function debounce<T>(ms: number): TransformStream<T> {
   let timer: ReturnType<typeof setTimeout> | undefined;
-  return new TransformStream<T, T>({
+  const clear = () => {
+    clearTimeout(timer);
+    timer = undefined;
+  };
+  const transformer: CancellableTransformer<T, T> = {
     transform(data, controller) {
       if (!timer) {
         controller.enqueue(data);
@@ -234,18 +238,19 @@ export function debounce<T>(ms: number): TransformStream<T> {
         timer = undefined;
       }, ms);
     },
-    flush() {
-      if (timer) {
-        clearTimeout(timer);
-        timer = undefined;
-      }
-    },
-  });
+    flush: clear,
+    cancel: clear,
+  };
+  return new TransformStream(transformer);
 }
 
 export function throttle<T>(ms: number): TransformStream<T> {
   let timer: ReturnType<typeof setTimeout> | undefined;
-  return new TransformStream<T, T>({
+  const clear = () => {
+    clearTimeout(timer);
+    timer = undefined;
+  };
+  const transformer: CancellableTransformer<T, T> = {
     transform(data, controller) {
       if (!timer) {
         controller.enqueue(data);
@@ -254,13 +259,10 @@ export function throttle<T>(ms: number): TransformStream<T> {
         }, ms);
       }
     },
-    flush() {
-      if (timer) {
-        clearTimeout(timer);
-        timer = undefined;
-      }
-    },
-  });
+    flush: clear,
+    cancel: clear,
+  };
+  return new TransformStream(transformer);
 }
 
 /** Splits text into lines. `crAsTerminator` also treats a lone `\r` as a line break (SSE rules). */

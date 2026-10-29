@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { take, zip, zipWith } from "../src/stream.ts";
+import { debounce, take, throttle, zip, zipWith } from "../src/stream.ts";
 import { dumbReadableStream, trackedReadableStream } from "./utils.ts";
 
 async function readAll<T>(stream: ReadableStream<T>) {
@@ -211,4 +211,29 @@ describe("zip", () => {
     await expect(reader.read()).rejects.toThrow("source failed");
     expect(idle.state.cancelled).toBe(true);
   }, 1000);
+});
+
+describe.each([
+  ["debounce", debounce],
+  ["throttle", throttle],
+])("%s timers", (_name, operator) => {
+  it("clears its timer when the output is cancelled", async () => {
+    vi.useFakeTimers();
+    try {
+      const { readable, writable } = operator<number>(1000);
+      const reader = readable.getReader();
+      void writable
+        .getWriter()
+        .write(1)
+        .catch(() => {});
+      await reader.read();
+      expect(vi.getTimerCount()).toBe(1);
+
+      await reader.cancel();
+
+      expect(vi.getTimerCount()).toBe(0);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
 });
