@@ -251,6 +251,38 @@ function syncThrowingAsyncIterator(): AsyncIterableIterator<number> {
   };
 }
 
+/** An async source that logs its calls; the first value can throw, and `return()` can fail. */
+function loggedAsyncIterator(
+  name: string,
+  log: string[],
+  { valueThrows, returnError }: { valueThrows?: unknown; returnError?: unknown } = {},
+): AsyncIterableIterator<number> {
+  let i = 0;
+  return {
+    async next() {
+      log.push(`${name}.next`);
+      if (valueThrows !== undefined && i++ === 0) {
+        return {
+          done: false,
+          get value(): number {
+            log.push(`${name}.value`);
+            throw valueThrows;
+          },
+        };
+      }
+      return { done: false, value: i++ };
+    },
+    async return(value) {
+      log.push(`${name}.return`);
+      if (returnError !== undefined) throw returnError;
+      return { done: true, value };
+    },
+    [Symbol.asyncIterator]() {
+      return this;
+    },
+  };
+}
+
 describe("zip", () => {
   it("zips two async iterables", async () => {
     const iterable1 = dumbAsyncIterable(1, 4);
@@ -333,6 +365,41 @@ describe("zip", () => {
       const b = syncThrowingAsyncIterator();
       await expect(toArray(zip(a, b))).rejects.toThrow("sync failure");
       expect(a.returns).toBe(1);
+    });
+
+    it("does not close the source whose value getter throws", async () => {
+      const log: string[] = [];
+      const a = loggedAsyncIterator("a", log, { valueThrows: new Error("value failed") });
+      const b = loggedAsyncIterator("b", log);
+      await expect(toArray(zip(a, b))).rejects.toThrow("value failed");
+      // the iterator whose value threw is done (not closed); the other one is closed
+      expect(log).not.toContain("a.return");
+      expect(log).toContain("b.return");
+    });
+
+    it("does not close the second source when its value getter throws", async () => {
+      const log: string[] = [];
+      const a = loggedAsyncIterator("a", log);
+      const b = loggedAsyncIterator("b", log, { valueThrows: new Error("value failed") });
+      await expect(toArray(zip(a, b))).rejects.toThrow("value failed");
+      expect(log).toContain("a.return");
+      expect(log).not.toContain("b.return");
+    });
+
+    it("closes the sources in reverse order when the consumer stops early", async () => {
+      const log: string[] = [];
+      for await (const _ of zip(loggedAsyncIterator("a", log), loggedAsyncIterator("b", log))) break;
+      expect(log.filter((entry) => entry.endsWith(".return"))).toEqual(["b.return", "a.return"]);
+    });
+
+    it("surfaces the error of the last source closed first when both return() calls reject", async () => {
+      const a = loggedAsyncIterator("a", [], { returnError: new Error("a return failed") });
+      const b = loggedAsyncIterator("b", [], { returnError: new Error("b return failed") });
+      await expect(
+        (async () => {
+          for await (const _ of zip(a, b)) break;
+        })(),
+      ).rejects.toThrow("b return failed");
     });
 
     it("but not the one that already completed", async () => {
