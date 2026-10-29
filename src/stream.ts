@@ -265,36 +265,48 @@ export function throttle<T>(ms: number): TransformStream<T> {
 
 /** Splits text into lines. `crAsTerminator` also treats a lone `\r` as a line break (SSE rules). */
 function createLineSplitter(emit: (line: string) => void, crAsTerminator: boolean) {
-  let buffer = "";
+  // Fragments of the line still waiting for its terminator; only each new chunk is scanned.
+  const pending: string[] = [];
   let pendingCR = false;
+
+  const emitLine = (tail: string) => {
+    let line = pending.length ? pending.join("") + tail : tail;
+    pending.length = 0;
+    if (!crAsTerminator && line.endsWith("\r")) line = line.slice(0, -1);
+    emit(line);
+  };
 
   return {
     push(chunk: string) {
+      if (chunk === "") return;
+      let start = 0;
       if (pendingCR) {
         pendingCR = false;
-        if (chunk.startsWith("\n")) chunk = chunk.slice(1);
+        if (chunk[0] === "\n") start = 1;
       }
-      buffer += chunk;
-      let start = 0;
-      for (let i = 0; i < buffer.length; i++) {
-        const char = buffer[i];
-        if (char === "\n") {
-          const end = !crAsTerminator && i > start && buffer[i - 1] === "\r" ? i - 1 : i;
-          emit(buffer.slice(start, end));
-          start = i + 1;
-        } else if (char === "\r" && crAsTerminator) {
-          emit(buffer.slice(start, i));
-          if (i + 1 === buffer.length) pendingCR = true;
-          else if (buffer[i + 1] === "\n") i++;
+      if (crAsTerminator) {
+        for (let i = start; i < chunk.length; i++) {
+          const code = chunk.charCodeAt(i);
+          if (code !== 10 && code !== 13) continue;
+          emitLine(chunk.slice(start, i));
+          if (code === 13) {
+            if (i + 1 === chunk.length) pendingCR = true;
+            else if (chunk[i + 1] === "\n") i++;
+          }
           start = i + 1;
         }
+      } else {
+        for (let nl = chunk.indexOf("\n", start); nl !== -1; nl = chunk.indexOf("\n", start)) {
+          emitLine(chunk.slice(start, nl));
+          start = nl + 1;
+        }
       }
-      buffer = buffer.slice(start);
+      if (start < chunk.length) pending.push(chunk.slice(start));
     },
     /** Emits the final partial line, if any. */
     flush() {
-      if (buffer !== "") emit(buffer);
-      buffer = "";
+      if (pending.length) emit(pending.join(""));
+      pending.length = 0;
     },
   };
 }
@@ -352,7 +364,7 @@ export interface ServerSentEvent {
   data: string;
   /** The last event ID seen on the stream, `""` if none. */
   id: string;
-  /** The reconnection time in milliseconds, if the event set a valid one. */
+  /** The last reconnection time, in milliseconds, set on the stream; `undefined` if none was. */
   retry: number | undefined;
 }
 
@@ -376,7 +388,7 @@ export function sse(): TransformStream<string, ServerSentEvent> {
       splitter = createLineSplitter((line) => {
         if (first) {
           first = false;
-          if (line.startsWith("﻿")) line = line.slice(1);
+          if (line.startsWith("\uFEFF")) line = line.slice(1);
         }
         if (line === "") {
           if (hasData) {
@@ -385,7 +397,6 @@ export function sse(): TransformStream<string, ServerSentEvent> {
           data = "";
           hasData = false;
           event = "";
-          retry = undefined;
           return;
         }
         if (line.startsWith(":")) return;

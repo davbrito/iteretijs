@@ -40,6 +40,16 @@ describe("lines", () => {
   });
 });
 
+describe("long lines", () => {
+  it("splits a line made of many chunks in linear time", async () => {
+    const chunks = Array.from({ length: 4096 }, () => "x".repeat(1024));
+    const start = performance.now();
+    const result = await run([...chunks, "\n"], lines());
+    expect(result).toEqual(["x".repeat(4096 * 1024)]);
+    expect(performance.now() - start).toBeLessThan(2000);
+  });
+});
+
 describe("ndjson", () => {
   const text = '{"a":1}\n\n  \n[2]\r\n"x"';
 
@@ -71,9 +81,9 @@ describe("sse", () => {
     "data: incomplete";
   const expected = [
     { event: "greet", data: "hello\nworld", id: "7", retry: 1500 },
-    { event: "message", data: "", id: "7", retry: undefined },
-    { event: "message", data: "second", id: "7", retry: undefined },
-    { event: "message", data: "x", id: "9", retry: undefined },
+    { event: "message", data: "", id: "7", retry: 1500 },
+    { event: "message", data: "second", id: "7", retry: 1500 },
+    { event: "message", data: "x", id: "9", retry: 1500 },
   ];
 
   it("follows the EventSource parsing rules", async () => {
@@ -84,6 +94,20 @@ describe("sse", () => {
     for (const chunks of splits(text)) {
       expect(await run(chunks, sse())).toEqual(expected);
     }
+  });
+
+  it("keeps the reconnection time set in its own block", async () => {
+    expect(await run(["retry: 3000\n\n", "data: hi\n\n", "data: again\n\n"], sse())).toEqual([
+      { event: "message", data: "hi", id: "", retry: 3000 },
+      { event: "message", data: "again", id: "", retry: 3000 },
+    ]);
+  });
+
+  it("ignores empty chunks between a \\r and its \\n", async () => {
+    expect(await run(["data: a\r", "", "\ndata: b\n\n"], sse())).toEqual([
+      { event: "message", data: "a\nb", id: "", retry: undefined },
+    ]);
+    expect(await run(["a\r", "", "\nb"], lines())).toEqual(["a", "b"]);
   });
 
   it("ignores ids containing NULL", async () => {
