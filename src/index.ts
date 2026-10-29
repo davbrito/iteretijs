@@ -81,17 +81,21 @@ export function* zip<T, U>(iterable1: Iterable<T>, iterable2: Iterable<U>): Gene
 
   try {
     for (;;) {
+      // Each `value` is read right after its `next()`, like `IteratorStepValue`: a getter that throws
+      // counts as `next()` throwing, so that iterator is done and the other one is not stepped.
       open1 = false;
       const item1 = iter1.next();
       if (item1.done) break;
+      const value1 = item1.value;
       open1 = true;
 
       open2 = false;
       const item2 = iter2.next();
       if (item2.done) break;
+      const value2 = item2.value;
       open2 = true;
 
-      yield [item1.value, item2.value];
+      yield [value1, value2];
     }
   } catch (error) {
     failed = true;
@@ -102,13 +106,13 @@ export function* zip<T, U>(iterable1: Iterable<T>, iterable2: Iterable<U>): Gene
 }
 
 /**
- * Calls `return()` on every given iterator, like the spec's `IteratorClose`: an error thrown by
- * `return()` only propagates when there is no error already in flight (`suppress`).
+ * Calls `return()` on every given iterator in reverse order, like the spec's `IteratorCloseAll`: an
+ * error thrown by `return()` only propagates when there is no error already in flight (`suppress`).
  */
 function closeAll(iterators: (Iterator<unknown> | false)[], suppress: boolean): void {
   let failed = false;
   let failure: unknown;
-  for (const iterator of iterators) {
+  for (const iterator of iterators.toReversed()) {
     if (!iterator) continue;
     try {
       iterator.return?.();

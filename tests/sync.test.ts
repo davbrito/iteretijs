@@ -177,6 +177,38 @@ describe("enumerate", () => {
   });
 });
 
+/** A sync source that logs its calls; the first value can throw, and `return()` can fail. */
+function loggedIterator(
+  name: string,
+  log: string[],
+  { valueThrows, returnError }: { valueThrows?: unknown; returnError?: unknown } = {},
+): IterableIterator<number> {
+  let i = 0;
+  return {
+    next() {
+      log.push(`${name}.next`);
+      if (valueThrows !== undefined && i++ === 0) {
+        return {
+          done: false,
+          get value(): number {
+            log.push(`${name}.value`);
+            throw valueThrows;
+          },
+        };
+      }
+      return { done: false, value: i++ };
+    },
+    return(value) {
+      log.push(`${name}.return`);
+      if (returnError !== undefined) throw returnError;
+      return { done: true, value };
+    },
+    [Symbol.iterator]() {
+      return this;
+    },
+  };
+}
+
 describe("zip", () => {
   it("returns an iterable of tuples of the same length as the shortest iterable", () => {
     const a = dumbIterable(1, 4);
@@ -249,6 +281,37 @@ describe("zip", () => {
       const b = trackedIterable(0, 10);
       expect(() => Array.from(zip(a, b))).toThrow("source failed");
       expect(b.returns).toBe(1);
+    });
+
+    it("reads the value right after next(), so a throwing value getter on the first source does not step the second", () => {
+      const log: string[] = [];
+      const a = loggedIterator("a", log, { valueThrows: new Error("value failed") });
+      const b = loggedIterator("b", log);
+      expect(() => Array.from(zip(a, b))).toThrow("value failed");
+      // like Iterator.zip: the iterator whose value threw is done, so it is not closed
+      expect(log).toEqual(["a.next", "a.value", "b.return"]);
+    });
+
+    it("does not close the second source when its value getter throws", () => {
+      const log: string[] = [];
+      const a = loggedIterator("a", log);
+      const b = loggedIterator("b", log, { valueThrows: new Error("value failed") });
+      expect(() => Array.from(zip(a, b))).toThrow("value failed");
+      expect(log).toEqual(["a.next", "b.next", "b.value", "a.return"]);
+    });
+
+    it("closes the sources in reverse order when the consumer stops early", () => {
+      const log: string[] = [];
+      for (const _ of zip(loggedIterator("a", log), loggedIterator("b", log))) break;
+      expect(log).toEqual(["a.next", "b.next", "b.return", "a.return"]);
+    });
+
+    it("surfaces the error of the last source closed first when both return() calls throw", () => {
+      const a = loggedIterator("a", [], { returnError: new Error("a return failed") });
+      const b = loggedIterator("b", [], { returnError: new Error("b return failed") });
+      expect(() => {
+        for (const _ of zip(a, b)) break;
+      }).toThrow("b return failed");
     });
 
     it("but not the one that already completed", () => {
