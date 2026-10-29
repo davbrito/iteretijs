@@ -37,20 +37,16 @@ describe("sync results are iterator objects", () => {
 describe("async results are async iterator objects", () => {
   it("every operator returns an AsyncIteratorObject", async () => {
     const source = asyncOps.iterateStream(new ReadableStream<number>());
-    expectTypeOf(source).toEqualTypeOf<AsyncGenerator<number, void, unknown>>();
-    expectTypeOf(asyncOps.map(source, String)).toEqualTypeOf<AsyncGenerator<string, void, unknown>>();
-    expectTypeOf(asyncOps.filter(source, Boolean)).toEqualTypeOf<AsyncGenerator<number, void, unknown>>();
-    expectTypeOf(asyncOps.take(source, 1)).toEqualTypeOf<AsyncGenerator<number, void, unknown>>();
-    expectTypeOf(asyncOps.drop(source, 1)).toEqualTypeOf<AsyncGenerator<number, void, unknown>>();
-    expectTypeOf(asyncOps.concat(source, source)).toEqualTypeOf<AsyncGenerator<number, void, unknown>>();
-    expectTypeOf(asyncOps.zip(source, source)).toEqualTypeOf<AsyncGenerator<[number, number], void, unknown>>();
-    expectTypeOf(asyncOps.enumerate(source)).toEqualTypeOf<AsyncGenerator<[number, number], void, unknown>>();
-  });
-
-  it("are assignable to AsyncIteratorObject", () => {
-    expectTypeOf<ReturnType<typeof asyncOps.map<number, number>>>().toExtend<
-      AsyncIteratorObject<number, void, unknown>
+    expectTypeOf(source).toEqualTypeOf<AsyncIteratorObject<number, undefined, unknown>>();
+    expectTypeOf(asyncOps.map(source, String)).toEqualTypeOf<AsyncIteratorObject<string, undefined, unknown>>();
+    expectTypeOf(asyncOps.filter(source, Boolean)).toEqualTypeOf<AsyncIteratorObject<number, undefined, unknown>>();
+    expectTypeOf(asyncOps.take(source, 1)).toEqualTypeOf<AsyncIteratorObject<number, undefined, unknown>>();
+    expectTypeOf(asyncOps.drop(source, 1)).toEqualTypeOf<AsyncIteratorObject<number, undefined, unknown>>();
+    expectTypeOf(asyncOps.concat(source, source)).toEqualTypeOf<AsyncIteratorObject<number, undefined, unknown>>();
+    expectTypeOf(asyncOps.zip(source, source)).toEqualTypeOf<
+      AsyncIteratorObject<[number, number], undefined, unknown>
     >();
+    expectTypeOf(asyncOps.enumerate(source)).toEqualTypeOf<AsyncIteratorObject<[number, number], undefined, unknown>>();
   });
 
   it("keep the deprecated AsyncItereti alias compatible", () => {
