@@ -72,6 +72,9 @@ describe("zipWith", () => {
     const reader = dumbReadableStream(0, 1).pipeThrough(zipWith(other)).getReader();
 
     expect(await reader.read()).toEqual({ done: false, value: [0, 10] });
+    // `other` is read ahead, so its failure is seen at once while the main stream may still produce
+    // items: let the end of the main stream reach the transformer before `other` fails.
+    await new Promise((resolve) => setTimeout(resolve, 0));
     controller.error(new Error("late"));
     await expect(reader.read()).resolves.toEqual({ done: true, value: undefined });
   }, 1000);
