@@ -105,6 +105,18 @@ for await (const { event, data, id, retry } of text.pipeThrough(sse())) {
 }
 ```
 
+### Batching a stream: `batch`
+
+`Iterator.prototype.chunks` only covers iterators, so `batch(size)` groups the chunks of a stream into arrays. The last array holds the remainder, and a `size` that is not a positive integer throws a `RangeError`:
+
+```ts
+import { batch } from "iteretijs/stream";
+
+for await (const rows of stream.pipeThrough(batch(100))) {
+  await insertMany(rows);
+}
+```
+
 ### Sync and async iterables: `enumerate`
 
 ```ts

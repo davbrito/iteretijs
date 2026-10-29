@@ -59,6 +59,7 @@ const streamCases: Record<string, (source: ReadableStream<number>) => ReadableSt
   filter: (s) => s.pipeThrough(streamOps.filter(() => true)),
   take: (s) => s.pipeThrough(streamOps.take(100)),
   drop: (s) => s.pipeThrough(streamOps.drop(1)),
+  batch: (s) => s.pipeThrough(streamOps.batch(2)),
   enumerate: (s) => s.pipeThrough(streamOps.enumerate()),
   debounce: (s) => s.pipeThrough(streamOps.debounce(0)),
   throttle: (s) => s.pipeThrough(streamOps.throttle(0)),
