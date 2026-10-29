@@ -87,6 +87,24 @@ source.pipeThrough(throttle(200)); // lets one chunk through every 200 ms
 
 `transform(fn)` is the building block of the others: a `TransformStream` made from a transform callback.
 
+### Stream parsers: `lines`, `ndjson` and `sse`
+
+Parsers for text streams, such as a `fetch` body. They take text, so put a `TextDecoderStream` in front, and they handle any chunk boundary:
+
+```ts
+import { lines, ndjson, sse } from "iteretijs/stream";
+
+const text = res.body.pipeThrough(new TextDecoderStream());
+
+text.pipeThrough(lines()); // one string per line (\n or \r\n)
+text.pipeThrough(ndjson<Item>()); // one parsed JSON value per line, blank lines skipped
+text.pipeThrough(ndjson({ onError: (error, line) => console.warn(line) })); // skip invalid lines instead of throwing
+
+for await (const { event, data, id, retry } of text.pipeThrough(sse())) {
+  // Server-Sent Events, following the WHATWG EventSource rules
+}
+```
+
 ### Sync and async iterables: `enumerate`
 
 ```ts
