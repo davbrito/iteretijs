@@ -78,25 +78,57 @@ interface CancellableTransformer<I, O> extends Transformer<I, O> {
 
 export function zipWith<T, U>(stream: ReadableStream<U>): TransformStream<T, [T, U]> {
   const reader = stream.getReader();
+  let controller!: TransformStreamDefaultController<[T, U]>;
+  // Set once this transformer cleans up `stream` itself (the main stream ended or the output was cancelled).
+  let finished = false;
+  // One item of `stream` is always being read ahead, so the end or a failure of `stream` is noticed
+  // even while the main stream is idle.
+  let pending: Promise<ReadableStreamReadResult<U>>;
+
+  const read = () => {
+    const result = reader.read();
+    // Handling both outcomes here also keeps this promise from ever being an unhandled rejection.
+    result.then(
+      (value) => {
+        if (!value.done || finished) return;
+        // Nothing can be paired anymore: free `stream`, close the output and cancel the main stream
+        // instead of reading it to the end and dropping its items.
+        finished = true;
+        reader.releaseLock();
+        controller.terminate();
+      },
+      (error) => {
+        if (finished) return;
+        finished = true;
+        reader.releaseLock();
+        controller.error(error);
+      },
+    );
+    return result;
+  };
+
   const transformer: CancellableTransformer<T, [T, U]> = {
+    start(c) {
+      controller = c;
+      pending = read();
+    },
     flush() {
       // The main stream is over and nothing will read `stream` anymore. Cleaning it up must not
       // fail an output that already delivered everything, e.g. if `stream` errored in the meantime.
+      finished = true;
       return reader.cancel().catch(() => {});
     },
     cancel(reason) {
+      finished = true;
       return reader.cancel(reason);
     },
     transform: async (data, controller) => {
-      const value = await reader.read();
+      const value = await pending;
 
-      if (value.done) {
-        // Nothing can be paired anymore: close the output and cancel the main stream instead of
-        // reading it to the end and dropping its items.
-        controller.terminate();
-        return;
-      }
+      // The end of `stream` already terminated the output.
+      if (value.done) return;
 
+      pending = read();
       controller.enqueue([data, value.value]);
     },
   };
