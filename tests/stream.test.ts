@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { zip, zipWith } from "../src/stream.ts";
 import { dumbReadableStream, trackedReadableStream } from "./utils.ts";
 
@@ -29,6 +29,17 @@ describe("zipWith", () => {
       [0, 10],
       [1, 11],
     ]);
+  }, 1000);
+
+  it("closes the output and cancels the main stream once the other stream ends", async () => {
+    const main = trackedReadableStream(0, 50);
+    const result = main.pipeThrough(zipWith(dumbReadableStream(10, 12)));
+
+    expect(await readAll(result)).toEqual([
+      [0, 10],
+      [1, 11],
+    ]);
+    await vi.waitFor(() => expect(main.cancels).toHaveLength(1));
   }, 1000);
 
   it("does not wait for the other stream to close before emitting", async () => {
