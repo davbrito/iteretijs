@@ -212,6 +212,65 @@ export function zip<T, U>(stream1: ReadableStream<T>, stream2: ReadableStream<U>
   });
 }
 
+/**
+ * Emits the chunks of every stream as soon as they arrive. It closes when all of them have closed,
+ * and errors as soon as one errors, cancelling the rest. Cancelling the output cancels every source.
+ * Each source is read only while the consumer pulls, and holds at most one unconsumed chunk.
+ */
+export function merge<T>(...streams: ReadableStream<T>[]): ReadableStream<T> {
+  type Settled = { index: number } & ({ result: ReadableStreamReadResult<T> } | { error: unknown });
+  const readers = streams.map((stream) => stream.getReader());
+  const open = new Set(readers.keys());
+  const reading = new Map<number, Promise<Settled>>();
+  let cancelled = false;
+
+  /** Cancels the sources that have not closed. */
+  const cancelOpen = (reason?: unknown) => {
+    const pending = [...open].map((index) => readers[index].cancel(reason));
+    open.clear();
+    return cancelAll(pending);
+  };
+
+  return new ReadableStream<T>({
+    async pull(controller) {
+      while (open.size > 0) {
+        for (const index of open) {
+          // These promises never reject, so a read nobody waits for cannot go unhandled.
+          if (reading.has(index)) continue;
+          reading.set(
+            index,
+            readers[index].read().then(
+              (result): Settled => ({ index, result }),
+              (error): Settled => ({ index, error }),
+            ),
+          );
+        }
+        const settled = await Promise.race(reading.values());
+        reading.delete(settled.index);
+        if (cancelled) return;
+
+        if ("error" in settled) {
+          open.delete(settled.index);
+          // Cancelling an errored stream rejects with its stored error, which is rethrown below.
+          await cancelOpen(settled.error).catch(() => {});
+          throw settled.error;
+        }
+        if (settled.result.done) {
+          open.delete(settled.index);
+          continue;
+        }
+        controller.enqueue(settled.result.value);
+        return;
+      }
+      controller.close();
+    },
+    cancel(reason) {
+      cancelled = true;
+      return cancelOpen(reason);
+    },
+  });
+}
+
 /** Waits for every promise, then rejects with the first failure, if any. */
 async function cancelAll(promises: (Promise<void> | undefined)[]): Promise<void> {
   const results = await Promise.allSettled(promises);

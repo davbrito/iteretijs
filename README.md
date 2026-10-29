@@ -65,14 +65,17 @@ for await (const n of odds) console.log(n); // 10, 30
 The operators that combine several streams give you back one:
 
 ```ts
-import { concat, enumerate, iota, zip, zipWith } from "iteretijs/stream";
+import { concat, enumerate, iota, merge, zip, zipWith } from "iteretijs/stream";
 
 concat(ReadableStream.from([1, 2]), ReadableStream.from([3])); // 1, 2, 3
 zip(ReadableStream.from(["a", "b", "c"]), ReadableStream.from([1, 2])); // ["a", 1], ["b", 2]
+merge(clicks, keys); // chunks of both, in arrival order
 ReadableStream.from(["a", "b", "c"]).pipeThrough(zipWith(ReadableStream.from([1, 2, 3]))); // ["a", 1], ["b", 2], ["c", 3]
 ReadableStream.from(["a", "b"]).pipeThrough(enumerate()); // [0, "a"], [1, "b"]
 iota(3); // 0, 1, 2
 ```
+
+`merge` closes when all the streams have closed, errors as soon as one errors (cancelling the rest), and reads each stream only while the consumer pulls.
 
 `zip` and `zipWith` close their output as soon as either stream ends, and cancel the one that is still open.
 
