@@ -63,6 +63,13 @@ const streamCases: Record<string, (source: ReadableStream<number>) => ReadableSt
   enumerate: (s) => s.pipeThrough(streamOps.enumerate()),
   debounce: (s) => s.pipeThrough(streamOps.debounce(0)),
   throttle: (s) => s.pipeThrough(streamOps.throttle(0)),
+  bufferTime: (s) => s.pipeThrough(streamOps.bufferTime(0, { maxSize: 1 })),
+  // A slow source: `sample` flushes its pending chunk when the source ends, which would otherwise happen before the cancel.
+  sample: (s) =>
+    s
+      .pipeThrough(streamOps.map((x) => new Promise<number>((resolve) => setTimeout(resolve, 5, x))))
+      .pipeThrough(streamOps.sample(0)),
+  timeout: (s) => s.pipeThrough(streamOps.timeout(1000)),
   zipWith: (s) => s.pipeThrough(streamOps.zipWith(trackedReadableStream(0, 100))),
   concat: (s) => streamOps.concat(s, trackedReadableStream(0, 100)),
   zip: (s) => streamOps.zip(s, trackedReadableStream(0, 100)),
