@@ -3,7 +3,8 @@ export type AsyncItereti<T> = AsyncGenerator<T, void, unknown>;
 
 /**
  * @deprecated Use `AsyncIterator.prototype.map` (TC39 async iterator helpers proposal, Stage 2): `AsyncIterator.from(iterable).map(mapper)`.
- * Polyfill: core-js.
+ * Not in Node 24 yet; polyfill: core-js.
+ * The callback also receives the index.
  */
 export async function* map<T, U>(
   iterable: AsyncIterable<T>,
@@ -16,7 +17,8 @@ export async function* map<T, U>(
 
 /**
  * @deprecated Use `AsyncIterator.prototype.filter` (TC39 async iterator helpers proposal, Stage 2): `AsyncIterator.from(iterable).filter(predicate)`.
- * Polyfill: core-js.
+ * Not in Node 24 yet; polyfill: core-js.
+ * The callback also receives the index.
  */
 export async function* filter<T>(
   iterable: AsyncIterable<T>,
@@ -31,7 +33,8 @@ export async function* filter<T>(
 
 /**
  * @deprecated Use `AsyncIterator.prototype.take` (TC39 async iterator helpers proposal, Stage 2): `AsyncIterator.from(iterable).take(count)`.
- * Polyfill: core-js.
+ * Not in Node 24 yet; polyfill: core-js.
+ * The native sync `take`/`drop` throw a `RangeError` for a negative or `NaN` count, and the async helpers are expected to as well.
  */
 export async function* take<T>(iterable: AsyncIterable<T>, count: number): AsyncGenerator<T, void, unknown> {
   let i = 0;
@@ -46,7 +49,8 @@ export async function* take<T>(iterable: AsyncIterable<T>, count: number): Async
 
 /**
  * @deprecated Use `AsyncIterator.prototype.drop` (TC39 async iterator helpers proposal, Stage 2): `AsyncIterator.from(iterable).drop(count)`.
- * Polyfill: core-js.
+ * Not in Node 24 yet; polyfill: core-js.
+ * The native sync `take`/`drop` throw a `RangeError` for a negative or `NaN` count, and the async helpers are expected to as well.
  */
 export async function* drop<T>(iterable: AsyncIterable<T>, count: number): AsyncGenerator<T, void, unknown> {
   let i = 0;
@@ -182,10 +186,6 @@ export function iterateStream<T>(
   };
 }
 
-/**
- * @deprecated Use `AsyncIterator.prototype.map` (TC39 async iterator helpers proposal, Stage 2), whose callback also receives the index: `AsyncIterator.from(iterable).map((value, index) => [index, value])`.
- * Polyfill: core-js.
- */
 export async function* enumerate<T>(iterable: AsyncIterable<T>): AsyncGenerator<[number, T], void, unknown> {
   let index = 0;
   for await (const item of iterable) {
@@ -209,7 +209,7 @@ export async function toArray<T>(iterable: AsyncIterable<T>): Promise<T[]> {
 
 /**
  * @deprecated Use `AsyncIterator.prototype.reduce` (TC39 async iterator helpers proposal, Stage 2): `AsyncIterator.from(iterable).reduce(reducer, initialValue)`.
- * Polyfill: core-js.
+ * Not in Node 24 yet; polyfill: core-js.
  */
 export async function reduce<T, U>(
   iterable: AsyncIterable<T>,
@@ -231,7 +231,7 @@ export async function reduce<T, U>(
 
 /**
  * @deprecated Use `AsyncIterator.prototype.reduce` (TC39 async iterator helpers proposal, Stage 2): `AsyncIterator.from(iterable).reduce((count) => count + 1, 0)`.
- * Polyfill: core-js.
+ * Not in Node 24 yet; polyfill: core-js.
  */
 export async function count<T>(iterable: AsyncIterable<T>): Promise<number> {
   let count = 0;
