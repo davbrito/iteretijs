@@ -101,7 +101,7 @@ The operators close the iterables they read when you stop early (`break`, `retur
 
 ### Async iterables: `concat` and `zip`
 
-The async iterator helpers proposal has no `concat` or `zip`, so for now these stay:
+The async iterator helpers proposal has no `concat` or `zip`, and `Iterator.concat` / `Iterator.zip` only take sync iterables, so for now these stay supported. They are planned for deprecation in v0.5 and for removal in v1.0, once the platform has general support for them.
 
 ```ts
 import { concat, zip } from "iteretijs/async";
@@ -139,6 +139,14 @@ Status of each replacement:
 - For the proposals that engines do not ship yet, [core-js](https://github.com/zloirock/core-js) provides polyfills.
 
 The deprecated functions keep working until v1.0.
+
+Async `concat` and `zip` (from `iteretijs/async`) are not in this table yet. They are planned for deprecation in v0.5, once there is a native replacement to point to. Meanwhile, `concat` can be written with `yield*` in an async generator:
+
+```ts
+async function* concat<T>(...sources: AsyncIterable<T>[]) {
+  for (const source of sources) yield* source;
+}
+```
 
 ## License
 
