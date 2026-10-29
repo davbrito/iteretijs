@@ -1,6 +1,11 @@
 /** An async generator whose results are also `AsyncIteratorObject`s. */
 export type AsyncItereti<T> = AsyncGenerator<T, void, unknown>;
 
+/**
+ * @deprecated Use `AsyncIterator.prototype.map` (TC39 async iterator helpers proposal, Stage 2): `AsyncIterator.from(iterable).map(mapper)`.
+ * Not in Node 24 yet; polyfill: core-js.
+ * The callback also receives the index.
+ */
 export async function* map<T, U>(
   iterable: AsyncIterable<T>,
   mapper: (value: T) => U | Promise<U>,
@@ -10,6 +15,11 @@ export async function* map<T, U>(
   }
 }
 
+/**
+ * @deprecated Use `AsyncIterator.prototype.filter` (TC39 async iterator helpers proposal, Stage 2): `AsyncIterator.from(iterable).filter(predicate)`.
+ * Not in Node 24 yet; polyfill: core-js.
+ * The callback also receives the index.
+ */
 export async function* filter<T>(
   iterable: AsyncIterable<T>,
   predicate: (value: T) => boolean | Promise<boolean>,
@@ -21,6 +31,11 @@ export async function* filter<T>(
   }
 }
 
+/**
+ * @deprecated Use `AsyncIterator.prototype.take` (TC39 async iterator helpers proposal, Stage 2): `AsyncIterator.from(iterable).take(count)`.
+ * Not in Node 24 yet; polyfill: core-js.
+ * The native sync `take`/`drop` throw a `RangeError` for a negative or `NaN` count, and the async helpers are expected to as well.
+ */
 export async function* take<T>(iterable: AsyncIterable<T>, count: number): AsyncGenerator<T, void, unknown> {
   let i = 0;
   for await (const item of iterable) {
@@ -32,6 +47,11 @@ export async function* take<T>(iterable: AsyncIterable<T>, count: number): Async
   }
 }
 
+/**
+ * @deprecated Use `AsyncIterator.prototype.drop` (TC39 async iterator helpers proposal, Stage 2): `AsyncIterator.from(iterable).drop(count)`.
+ * Not in Node 24 yet; polyfill: core-js.
+ * The native sync `take`/`drop` throw a `RangeError` for a negative or `NaN` count, and the async helpers are expected to as well.
+ */
 export async function* drop<T>(iterable: AsyncIterable<T>, count: number): AsyncGenerator<T, void, unknown> {
   let i = 0;
   for await (const item of iterable) {
@@ -42,12 +62,25 @@ export async function* drop<T>(iterable: AsyncIterable<T>, count: number): Async
   }
 }
 
+/**
+ * Not deprecated yet. Planned for deprecation in v0.5 and removal in v1.0, once the platform has general
+ * support for it: the async iterator helpers proposal has no `concat`.
+ *
+ * Suggestion: chain the iterables with `yield*` in an async generator:
+ * `async function* () { yield* a; yield* b; }`.
+ */
 export async function* concat<T>(...iterables: AsyncIterable<T>[]): AsyncGenerator<T, void, unknown> {
   for (const iterable of iterables) {
     yield* iterable;
   }
 }
 
+/**
+ * Not deprecated yet. Planned for deprecation in v0.5 and removal in v1.0, once the platform has general
+ * support for it: `Iterator.zip` only takes sync iterables and the async iterator helpers proposal has no `zip`.
+ *
+ * Suggestion: keep using it until then; the replacement will be named here when it is deprecated.
+ */
 export async function* zip<T, U>(
   iterable1: AsyncIterable<T>,
   iterable2: AsyncIterable<U>,
@@ -111,6 +144,9 @@ interface IterateStreamOptions {
   preventCancel?: boolean;
 }
 
+/**
+ * @deprecated Iterate the stream directly: `for await (const chunk of stream)`, or `stream.values({ preventCancel })` to keep the stream open when you stop early.
+ */
 export function iterateStream<T>(
   stream: ReadableStream<T>,
   options?: IterateStreamOptions,
@@ -158,6 +194,9 @@ export async function* enumerate<T>(iterable: AsyncIterable<T>): AsyncGenerator<
   }
 }
 
+/**
+ * @deprecated Use the native `Array.fromAsync`: `Array.fromAsync(iterable)`.
+ */
 export async function toArray<T>(iterable: AsyncIterable<T>): Promise<T[]> {
   const result: T[] = [];
 
@@ -168,6 +207,10 @@ export async function toArray<T>(iterable: AsyncIterable<T>): Promise<T[]> {
   return result;
 }
 
+/**
+ * @deprecated Use `AsyncIterator.prototype.reduce` (TC39 async iterator helpers proposal, Stage 2): `AsyncIterator.from(iterable).reduce(reducer, initialValue)`.
+ * Not in Node 24 yet; polyfill: core-js.
+ */
 export async function reduce<T, U>(
   iterable: AsyncIterable<T>,
   reducer: (accumulator: U, value: T) => U | PromiseLike<U>,
@@ -186,6 +229,10 @@ export async function reduce<T, U>(
   return accumulator;
 }
 
+/**
+ * @deprecated Use `AsyncIterator.prototype.reduce` (TC39 async iterator helpers proposal, Stage 2): `AsyncIterator.from(iterable).reduce((count) => count + 1, 0)`.
+ * Not in Node 24 yet; polyfill: core-js.
+ */
 export async function count<T>(iterable: AsyncIterable<T>): Promise<number> {
   let count = 0;
 

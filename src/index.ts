@@ -1,9 +1,17 @@
+/**
+ * @deprecated Use the native `Iterator.prototype.map` (ES2025): `Iterator.from(iterable).map(mapper)`.
+ * The native callback also receives the index, so `map(items, parseInt)` becomes `.map((x) => parseInt(x))`.
+ */
 export function* map<T, U>(iterable: Iterable<T>, mapper: (value: T) => U): Generator<U, void, unknown> {
   for (const item of iterable) {
     yield mapper(item);
   }
 }
 
+/**
+ * @deprecated Use the native `Iterator.prototype.filter` (ES2025): `Iterator.from(iterable).filter(predicate)`.
+ * The native callback also receives the index.
+ */
 export function* filter<T>(iterable: Iterable<T>, predicate: (value: T) => boolean): Generator<T, void, unknown> {
   for (const item of iterable) {
     if (predicate(item)) {
@@ -12,6 +20,10 @@ export function* filter<T>(iterable: Iterable<T>, predicate: (value: T) => boole
   }
 }
 
+/**
+ * @deprecated Use the native `Iterator.prototype.take` (ES2025): `Iterator.from(iterable).take(count)`.
+ * The native one throws a `RangeError` for a negative or `NaN` count.
+ */
 export function* take<T>(iterable: Iterable<T>, count: number): Generator<T, void, unknown> {
   let i = 0;
   for (const item of iterable) {
@@ -23,6 +35,10 @@ export function* take<T>(iterable: Iterable<T>, count: number): Generator<T, voi
   }
 }
 
+/**
+ * @deprecated Use the native `Iterator.prototype.drop` (ES2025): `Iterator.from(iterable).drop(count)`.
+ * The native one throws a `RangeError` for a negative or `NaN` count.
+ */
 export function* drop<T>(iterable: Iterable<T>, count: number): Generator<T, void, unknown> {
   let i = 0;
   for (const item of iterable) {
@@ -33,12 +49,20 @@ export function* drop<T>(iterable: Iterable<T>, count: number): Generator<T, voi
   }
 }
 
+/**
+ * @deprecated Use `Iterator.concat` (TC39 iterator sequencing proposal, Stage 4): `Iterator.concat(a, b)`.
+ * Not in Node 24 yet; polyfill: core-js.
+ */
 export function* concat<T>(...iterables: Iterable<T>[]): Generator<T, void, unknown> {
   for (const iterable of iterables) {
     yield* iterable;
   }
 }
 
+/**
+ * @deprecated Use `Iterator.zip` (TC39 joint iteration proposal, Stage 4), which takes an iterable of iterables: `Iterator.zip([a, b])`.
+ * Not in Node 24 yet; polyfill: core-js.
+ */
 export function* zip<T, U>(iterable1: Iterable<T>, iterable2: Iterable<U>): Generator<[T, U], void, unknown> {
   const iter1 = iterable1[Symbol.iterator]();
   let iter2: Iterator<U>;
@@ -103,12 +127,28 @@ export function* enumerate<T>(iterable: Iterable<T>): Generator<[number, T], voi
   }
 }
 
+/**
+ * @deprecated Use `Iterator.range` (TC39 `Iterator.range` proposal, Stage 2):
+ * `Iterator.range(start, step < 0 ? -Infinity : Infinity, step)`.
+ * Not in Node 24 yet; polyfill: core-js.
+ *
+ * With a negative step this counts down forever, like `Iterator.range` with an infinite end; a step of
+ * `0` repeats `start` forever, while `Iterator.range` throws a `RangeError`.
+ */
 export function* iota(start = 0, step = 1): Generator<number, void, unknown> {
   for (let i = start; ; i += step) {
     yield i;
   }
 }
 
+/**
+ * @deprecated Use `Iterator.range` (TC39 `Iterator.range` proposal, Stage 2): `Iterator.range(start, end, step)`.
+ * Not in Node 24 yet; polyfill: core-js.
+ *
+ * Differences with a negative or zero step: `Iterator.range(5, 0, -1)` counts down (5, 4, 3, 2, 1) where this
+ * yields nothing, `Iterator.range(0, 5, -1)` yields nothing where this never ends, and a step of `0`
+ * throws a `RangeError` where this never ends.
+ */
 export function* range(start: number, end: number, step = 1): Generator<number, void, unknown> {
   for (let i = start; i < end; i += step) {
     yield i;
