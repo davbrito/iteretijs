@@ -5,7 +5,8 @@ import * as syncOps from "../src/index.ts";
 describe("sync results are generators", () => {
   it("inherit the native iterator helpers", () => {
     const doubled = syncOps.range(0, 10).map((x) => x * 2);
-    expectTypeOf(doubled).toEqualTypeOf<Generator<number, void, unknown>>();
+    // the native helpers return a plain IteratorObject
+    expectTypeOf(doubled).toEqualTypeOf<IteratorObject<number, undefined, unknown>>();
     expectTypeOf(doubled.toArray()).toEqualTypeOf<number[]>();
   });
 
@@ -16,7 +17,7 @@ describe("sync results are generators", () => {
       .take(3);
     expectTypeOf(result.toArray()).toEqualTypeOf<number[]>();
     expectTypeOf(syncOps.map(syncOps.range(0, 3), String).map((s) => s.length)).toEqualTypeOf<
-      Generator<number, void, unknown>
+      IteratorObject<number, undefined, unknown>
     >();
   });
 
@@ -54,7 +55,7 @@ describe("async results are async generators", () => {
 
 describe("results are iterator objects that keep return() and throw()", () => {
   it("sync results extend IteratorObject", () => {
-    expectTypeOf<ReturnType<typeof syncOps.range>>().toExtend<IteratorObject<number, undefined, unknown>>();
+    expectTypeOf<ReturnType<typeof syncOps.range>>().toExtend<IteratorObject<number, void, unknown>>();
   });
 
   it("async results extend AsyncIteratorObject", () => {

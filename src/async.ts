@@ -1,10 +1,10 @@
-/** @deprecated Use `AsyncIteratorObject<T, undefined, unknown>`; this alias only exists to keep old imports working. */
-export type AsyncItereti<T> = AsyncIteratorObject<T, undefined, unknown>;
+/** An async generator whose results are also `AsyncIteratorObject`s. */
+export type AsyncItereti<T> = AsyncGenerator<T, void, unknown>;
 
 export async function* map<T, U>(
   iterable: AsyncIterable<T>,
   mapper: (value: T) => U | Promise<U>,
-): AsyncIteratorObject<U, undefined, unknown> {
+): AsyncGenerator<U, void, unknown> {
   for await (const item of iterable) {
     yield mapper(item);
   }
@@ -13,7 +13,7 @@ export async function* map<T, U>(
 export async function* filter<T>(
   iterable: AsyncIterable<T>,
   predicate: (value: T) => boolean | Promise<boolean>,
-): AsyncIteratorObject<T, undefined, unknown> {
+): AsyncGenerator<T, void, unknown> {
   for await (const item of iterable) {
     if (await predicate(item)) {
       yield item;
@@ -21,7 +21,7 @@ export async function* filter<T>(
   }
 }
 
-export async function* take<T>(iterable: AsyncIterable<T>, count: number): AsyncIteratorObject<T, undefined, unknown> {
+export async function* take<T>(iterable: AsyncIterable<T>, count: number): AsyncGenerator<T, void, unknown> {
   let i = 0;
   for await (const item of iterable) {
     if (i >= count) {
@@ -32,7 +32,7 @@ export async function* take<T>(iterable: AsyncIterable<T>, count: number): Async
   }
 }
 
-export async function* drop<T>(iterable: AsyncIterable<T>, count: number): AsyncIteratorObject<T, undefined, unknown> {
+export async function* drop<T>(iterable: AsyncIterable<T>, count: number): AsyncGenerator<T, void, unknown> {
   let i = 0;
   for await (const item of iterable) {
     if (i >= count) {
@@ -42,7 +42,7 @@ export async function* drop<T>(iterable: AsyncIterable<T>, count: number): Async
   }
 }
 
-export async function* concat<T>(...iterables: AsyncIterable<T>[]): AsyncIteratorObject<T, undefined, unknown> {
+export async function* concat<T>(...iterables: AsyncIterable<T>[]): AsyncGenerator<T, void, unknown> {
   for (const iterable of iterables) {
     yield* iterable;
   }
@@ -51,7 +51,7 @@ export async function* concat<T>(...iterables: AsyncIterable<T>[]): AsyncIterato
 export async function* zip<T, U>(
   iterable1: AsyncIterable<T>,
   iterable2: AsyncIterable<U>,
-): AsyncIteratorObject<[T, U], undefined, unknown> {
+): AsyncGenerator<[T, U], void, unknown> {
   const iter1 = iterable1[Symbol.asyncIterator]();
   let iter2: AsyncIterator<U>;
   try {
@@ -114,7 +114,7 @@ interface IterateStreamOptions {
 export function iterateStream<T>(
   stream: ReadableStream<T>,
   options?: IterateStreamOptions,
-): AsyncIteratorObject<T, undefined, unknown> {
+): AsyncGenerator<T, void, unknown> {
   const reader = stream.getReader();
   const preventCancel = options?.preventCancel ?? false;
 
@@ -145,12 +145,12 @@ export function iterateStream<T>(
       throw e;
     },
     async [Symbol.asyncDispose]() {
-      await this.return?.();
+      await this.return();
     },
   };
 }
 
-export async function* enumerate<T>(iterable: AsyncIterable<T>): AsyncIteratorObject<[number, T], undefined, unknown> {
+export async function* enumerate<T>(iterable: AsyncIterable<T>): AsyncGenerator<[number, T], void, unknown> {
   let index = 0;
   for await (const item of iterable) {
     yield [index, item];

@@ -1,13 +1,10 @@
-export function* map<T, U>(iterable: Iterable<T>, mapper: (value: T) => U): IteratorObject<U, undefined, unknown> {
+export function* map<T, U>(iterable: Iterable<T>, mapper: (value: T) => U): Generator<U, void, unknown> {
   for (const item of iterable) {
     yield mapper(item);
   }
 }
 
-export function* filter<T>(
-  iterable: Iterable<T>,
-  predicate: (value: T) => boolean,
-): IteratorObject<T, undefined, unknown> {
+export function* filter<T>(iterable: Iterable<T>, predicate: (value: T) => boolean): Generator<T, void, unknown> {
   for (const item of iterable) {
     if (predicate(item)) {
       yield item;
@@ -15,7 +12,7 @@ export function* filter<T>(
   }
 }
 
-export function* take<T>(iterable: Iterable<T>, count: number): IteratorObject<T, undefined, unknown> {
+export function* take<T>(iterable: Iterable<T>, count: number): Generator<T, void, unknown> {
   let i = 0;
   for (const item of iterable) {
     if (i >= count) {
@@ -26,7 +23,7 @@ export function* take<T>(iterable: Iterable<T>, count: number): IteratorObject<T
   }
 }
 
-export function* drop<T>(iterable: Iterable<T>, count: number): IteratorObject<T, undefined, unknown> {
+export function* drop<T>(iterable: Iterable<T>, count: number): Generator<T, void, unknown> {
   let i = 0;
   for (const item of iterable) {
     if (i >= count) {
@@ -36,13 +33,13 @@ export function* drop<T>(iterable: Iterable<T>, count: number): IteratorObject<T
   }
 }
 
-export function* concat<T>(...iterables: Iterable<T>[]): IteratorObject<T, undefined, unknown> {
+export function* concat<T>(...iterables: Iterable<T>[]): Generator<T, void, unknown> {
   for (const iterable of iterables) {
     yield* iterable;
   }
 }
 
-export function* zip<T, U>(iterable1: Iterable<T>, iterable2: Iterable<U>): IteratorObject<[T, U], undefined, unknown> {
+export function* zip<T, U>(iterable1: Iterable<T>, iterable2: Iterable<U>): Generator<[T, U], void, unknown> {
   const iter1 = iterable1[Symbol.iterator]();
   let iter2: Iterator<U>;
   try {
@@ -98,7 +95,7 @@ function closeAll(iterators: (Iterator<unknown> | false)[], suppress: boolean): 
   if (failed && !suppress) throw failure;
 }
 
-export function* enumerate<T>(iterable: Iterable<T>): IteratorObject<[number, T], undefined, unknown> {
+export function* enumerate<T>(iterable: Iterable<T>): Generator<[number, T], void, unknown> {
   let index = 0;
   for (const item of iterable) {
     yield [index, item];
@@ -106,13 +103,13 @@ export function* enumerate<T>(iterable: Iterable<T>): IteratorObject<[number, T]
   }
 }
 
-export function* iota(start = 0, step = 1): IteratorObject<number, undefined, unknown> {
+export function* iota(start = 0, step = 1): Generator<number, void, unknown> {
   for (let i = start; ; i += step) {
     yield i;
   }
 }
 
-export function* range(start: number, end: number, step = 1): IteratorObject<number, undefined, unknown> {
+export function* range(start: number, end: number, step = 1): Generator<number, void, unknown> {
   for (let i = start; i < end; i += step) {
     yield i;
   }

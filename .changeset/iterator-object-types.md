@@ -1,10 +1,10 @@
 ---
-"iteretijs": minor
+"iteretijs": patch
 ---
 
-Type the results as iterator objects so the native helpers are visible to TypeScript.
+Type the results as generators so the native iterator helpers are visible to TypeScript.
 
-The sync operators (`map`, `filter`, `take`, `drop`, `concat`, `zip`, `enumerate`, `iota` and `range`) now return `IteratorObject<T, undefined, unknown>` instead of `Iterable<T>`. At runtime they were already generators, so the native iterator helpers already worked; only the types hid them:
+The sync operators (`map`, `filter`, `take`, `drop`, `concat`, `zip`, `enumerate`, `iota` and `range`) now return `Generator<T, void, unknown>` instead of `Iterable<T>`. At runtime they were already generators, so the native iterator helpers already worked; only the types hid them:
 
 ```ts
 range(0, 10)
@@ -12,9 +12,10 @@ range(0, 10)
   .toArray(); // type-checks now
 ```
 
-The async operators and `iterateStream` now return `AsyncIteratorObject<T, undefined, unknown>` instead of the custom `AsyncItereti` interface, which stays as a deprecated alias. TypeScript has no async iterator helpers, so this only changes the base type.
+The async operators and `iterateStream` now return `AsyncGenerator<T, void, unknown>`. `AsyncItereti` stays as an alias of that type, so `return()` and `throw()` remain required and nothing changes for code that already called them. TypeScript has no async iterator helpers, so for async only the base type changes.
 
-**Breaking, types only:**
+`Generator` and `AsyncGenerator` extend `IteratorObject` and `AsyncIteratorObject` from TypeScript 5.6, and the helper methods come from the `esnext.iterator` lib, so add it to `lib` in your `tsconfig.json` to see them:
 
-- `return()` and `throw()` are optional on `AsyncIteratorObject`. Code that calls them on the result of an async operator, or on a value typed `AsyncItereti`, must now use `iterator.return?.()`.
-- `IteratorObject` and `AsyncIteratorObject` need TypeScript 5.6 or later. Older versions fail with `Cannot find name 'IteratorObject'`.
+```json
+{ "compilerOptions": { "lib": ["es2023", "esnext.iterator"] } }
+```
