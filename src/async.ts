@@ -103,8 +103,7 @@ export async function* zip<T, U>(
     for (;;) {
       open1 = open2 = false;
       // Wait for both to settle so a rejection never leaves the other `next()` in flight.
-      // The `async` wrappers also turn a synchronous throw from `next()` into a rejection.
-      const [result1, result2] = await Promise.allSettled([(async () => iter1.next())(), (async () => iter2.next())()]);
+      const [result1, result2] = await Promise.allSettled([step(iter1), step(iter2)]);
       open1 = result1.status === "fulfilled" && !result1.value.done;
       open2 = result2.status === "fulfilled" && !result2.value.done;
 
@@ -123,13 +122,22 @@ export async function* zip<T, U>(
 }
 
 /**
- * Calls `return()` on every given iterator, like the spec's `AsyncIteratorClose`: an error thrown by
- * `return()` only propagates when there is no error already in flight (`suppress`).
+ * Steps an iterator and reads `done` and `value` right away, like `IteratorStepValue`: a throwing getter, or
+ * a `next()` that throws synchronously, becomes a rejection, so that iterator counts as done.
+ */
+async function step<T>(iterator: AsyncIterator<T>): Promise<{ done: true } | { done: false; value: T }> {
+  const result = await iterator.next();
+  return result.done ? { done: true } : { done: false, value: result.value };
+}
+
+/**
+ * Calls `return()` on every given iterator in reverse order, like the spec's `IteratorCloseAll`: an
+ * error thrown by `return()` only propagates when there is no error already in flight (`suppress`).
  */
 async function closeAll(iterators: (AsyncIterator<unknown> | false)[], suppress: boolean): Promise<void> {
   let failed = false;
   let failure: unknown;
-  for (const iterator of iterators) {
+  for (const iterator of iterators.toReversed()) {
     if (!iterator) continue;
     try {
       await iterator.return?.();
