@@ -1,5 +1,32 @@
 # iteretijs
 
+## 0.4.1
+
+### Patch Changes
+
+- [#61](https://github.com/davbrito/iteretijs/pull/61) [`e05cbd3`](https://github.com/davbrito/iteretijs/commit/e05cbd30a64a6669749aeed77d116865ccab95ee) Thanks [@davbrito](https://github.com/davbrito)! - Fix `debounce` and `throttle` keeping their timer running after the output is cancelled.
+
+  The timer was only cleared when the stream ended normally, so cancelling early left it pending for up to `ms` milliseconds, which could keep a Node process alive.
+
+- [#62](https://github.com/davbrito/iteretijs/pull/62) [`d89b097`](https://github.com/davbrito/iteretijs/commit/d89b097fee6c92204ac6b02cb80d09cf2cd06a85) Thanks [@davbrito](https://github.com/davbrito)! - Add `batch(size)` to `iteretijs/stream`: a transform stream that groups chunks into arrays of `size` and flushes the last partial batch.
+
+- [#59](https://github.com/davbrito/iteretijs/pull/59) [`557016c`](https://github.com/davbrito/iteretijs/commit/557016cbbc399af5766ca11bf965be0b2301b983) Thanks [@davbrito](https://github.com/davbrito)! - Add the stream parsers `lines()`, `ndjson()` and `sse()` to `iteretijs/stream`.
+
+  They are `TransformStream`s from text chunks, so they chain after `TextDecoderStream` and are safe against any chunk boundary:
+
+  ```ts
+  import { sse } from "iteretijs/stream";
+
+  const events = res.body.pipeThrough(new TextDecoderStream()).pipeThrough(sse());
+  for await (const { event, data, id, retry } of events) {
+    // …
+  }
+  ```
+
+  - `lines()` splits on `\n` and `\r\n` and flushes the final partial line.
+  - `ndjson(options?)` parses one JSON value per line, skips blank lines, and either throws on invalid JSON (default) or skips it through `onError(error, line)`.
+  - `sse()` follows the WHATWG EventSource parsing rules (multi-line `data`, comments, `retry`, BOM).
+
 ## 0.4.0
 
 ### Minor Changes
