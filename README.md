@@ -117,6 +117,21 @@ for await (const rows of stream.pipeThrough(batch(100))) {
 }
 ```
 
+### Time-based transforms: `bufferTime`, `sample` and `timeout`
+
+They complement `debounce` and `throttle`. Their timers are cleared when the stream ends, is cancelled or fails:
+
+```ts
+import { bufferTime, sample, timeout } from "iteretijs/stream";
+
+stream.pipeThrough(bufferTime(1000, { maxSize: 100 })); // arrays every second, or every 100 chunks; never empty
+stream.pipeThrough(sample(200)); // the latest chunk every 200ms, if there is a new one
+stream.pipeThrough(timeout(5000)); // errors with a TimeoutError after 5s without a chunk
+stream.pipeThrough(timeout(5000, { onTimeout: () => console.warn("idle") })); // closes the output instead of erroring
+```
+
+`bufferTime` and `sample` emit what they still hold when the stream ends. Their timers do not wait for the consumer, so a slow consumer makes the output queue up.
+
 ### Sync and async iterables: `enumerate`
 
 ```ts
