@@ -120,6 +120,23 @@ for await (const rows of stream.pipeThrough(batch(100))) {
 }
 ```
 
+### Time-based transforms: `bufferTime`, `sampleTime` and `timeout`
+
+They complement `debounce` and `throttle`. `sampleRandom` has no timer; it is the probabilistic counterpart of `sampleTime`. The timers are cleared when the stream ends, is cancelled or fails:
+
+```ts
+import { bufferTime, sampleRandom, sampleTime, timeout } from "iteretijs/stream";
+
+stream.pipeThrough(bufferTime(1000, { maxSize: 100 })); // arrays every second, or every 100 chunks (the interval restarts); never empty
+stream.pipeThrough(sampleTime(200)); // the latest chunk every 200ms, if there is a new one
+stream.pipeThrough(sampleRandom(0.1)); // keeps about 10% of the chunks, at random
+stream.pipeThrough(sampleRandom((line) => (line.startsWith("error") ? 1 : 0.01))); // probability per chunk
+stream.pipeThrough(timeout(5000)); // errors with a TimeoutError if the source is silent for 5s
+stream.pipeThrough(timeout(5000, { onTimeout: () => console.warn("idle") })); // closes the output instead of erroring
+```
+
+`bufferTime` and `sampleTime` emit what they still hold when the stream ends. The timers of `bufferTime` and `sampleTime` do not wait for the consumer, so a slow consumer makes the output queue up. `timeout` respects backpressure: it counts only while the consumer is waiting for a chunk, starting at the first read, so a slow consumer never triggers it.
+
 ### Sync and async iterables: `enumerate`
 
 ```ts
