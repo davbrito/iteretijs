@@ -212,14 +212,28 @@ export function zip<T, U>(stream1: ReadableStream<T>, stream2: ReadableStream<U>
   });
 }
 
+export interface MergeOptions<T> {
+  /** The queuing strategy of the output stream. Defaults to that of `new ReadableStream()`. */
+  queuingStrategy?: QueuingStrategy<T>;
+}
+
+/** The chunk type of a stream; distributes over a union of streams. */
+type StreamChunk<S> = S extends ReadableStream<infer T> ? T : never;
+
 /**
  * Emits the chunks of every stream as soon as they arrive. It closes when all of them have closed,
  * and errors as soon as one errors, cancelling the rest. Cancelling the output cancels every source.
  * Each source is read only while the consumer pulls, and holds at most one unconsumed chunk.
+ * `queuingStrategy` sizes the output's queue, as in `new ReadableStream()`: a `highWaterMark` of 0
+ * reads the sources only when the consumer asks, a higher one reads ahead.
  */
-export function merge<T>(...streams: ReadableStream<T>[]): ReadableStream<T> {
+export function merge<const S extends readonly ReadableStream<unknown>[]>(
+  streams: S,
+  { queuingStrategy }: MergeOptions<StreamChunk<S[number]>> = {},
+): ReadableStream<StreamChunk<S[number]>> {
+  type T = StreamChunk<S[number]>;
   type Settled = { index: number } & ({ result: ReadableStreamReadResult<T> } | { error: unknown });
-  const readers = streams.map((stream) => stream.getReader());
+  const readers = streams.map((stream) => stream.getReader() as ReadableStreamDefaultReader<T>);
   const open = new Set(readers.keys());
   // The sources with a read in flight, and the reads that settled and were not handled yet, in
   // arrival order. A queue instead of `Promise.race`: racing a source that stays silent would add
@@ -250,35 +264,38 @@ export function merge<T>(...streams: ReadableStream<T>[]): ReadableStream<T> {
     return cancelAll(pending);
   };
 
-  return new ReadableStream<T>({
-    async pull(controller) {
-      while (open.size > 0) {
-        for (const index of open) if (!reading.has(index)) read(index);
-        while (settled.length === 0) await new Promise<void>((resolve) => (wake = resolve));
-        const next = settled.shift()!;
-        reading.delete(next.index);
-        if (cancelled) return;
+  return new ReadableStream<T>(
+    {
+      async pull(controller) {
+        while (open.size > 0) {
+          for (const index of open) if (!reading.has(index)) read(index);
+          while (settled.length === 0) await new Promise<void>((resolve) => (wake = resolve));
+          const next = settled.shift()!;
+          reading.delete(next.index);
+          if (cancelled) return;
 
-        if ("error" in next) {
-          open.delete(next.index);
-          // The output errors with the source's error; a failure while cancelling the rest is dropped.
-          await cancelOpen(next.error).catch(() => {});
-          throw next.error;
+          if ("error" in next) {
+            open.delete(next.index);
+            // The output errors with the source's error; a failure while cancelling the rest is dropped.
+            await cancelOpen(next.error).catch(() => {});
+            throw next.error;
+          }
+          if (next.result.done) {
+            open.delete(next.index);
+            continue;
+          }
+          controller.enqueue(next.result.value);
+          return;
         }
-        if (next.result.done) {
-          open.delete(next.index);
-          continue;
-        }
-        controller.enqueue(next.result.value);
-        return;
-      }
-      controller.close();
+        controller.close();
+      },
+      cancel(reason) {
+        cancelled = true;
+        return cancelOpen(reason);
+      },
     },
-    cancel(reason) {
-      cancelled = true;
-      return cancelOpen(reason);
-    },
-  });
+    queuingStrategy,
+  );
 }
 
 /** Waits for every promise, then rejects with the first failure, if any. */

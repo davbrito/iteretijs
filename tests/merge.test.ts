@@ -23,6 +23,15 @@ function manual<T>() {
   };
 }
 
+function stringStream(value: string) {
+  return new ReadableStream<string>({
+    start(controller) {
+      controller.enqueue(value);
+      controller.close();
+    },
+  });
+}
+
 async function readAll<T>(stream: ReadableStream<T>) {
   const items: T[] = [];
   const reader = stream.getReader();
@@ -34,7 +43,7 @@ describe("merge", () => {
   it("emits the chunks in arrival order", async () => {
     const a = manual<string>();
     const b = manual<string>();
-    const reader = merge(a.stream, b.stream).getReader();
+    const reader = merge([a.stream, b.stream]).getReader();
 
     const first = reader.read();
     b.push("b1");
@@ -51,7 +60,7 @@ describe("merge", () => {
 
   it("keeps every chunk and closes when all the sources close", async () => {
     const out = await readAll(
-      merge(trackedReadableStream(0, 3), trackedReadableStream(10, 12), trackedReadableStream(20, 21)),
+      merge([trackedReadableStream(0, 3), trackedReadableStream(10, 12), trackedReadableStream(20, 21)]),
     );
     expect(out.sort((x, y) => x - y)).toEqual([0, 1, 2, 10, 11, 20]);
   });
@@ -59,7 +68,7 @@ describe("merge", () => {
   it("keeps reading the sources that are left when one closes", async () => {
     const a = manual<number>();
     const b = manual<number>();
-    const reader = merge(a.stream, b.stream).getReader();
+    const reader = merge([a.stream, b.stream]).getReader();
     a.close();
     const next = reader.read();
     b.push(1);
@@ -69,13 +78,13 @@ describe("merge", () => {
   });
 
   it("closes right away without sources", async () => {
-    expect(await readAll(merge())).toEqual([]);
+    expect(await readAll(merge([]))).toEqual([]);
   });
 
   it("errors as soon as a source errors and cancels the rest", async () => {
     const a = manual<number>();
     const b = manual<number>();
-    const reader = merge(a.stream, b.stream).getReader();
+    const reader = merge([a.stream, b.stream]).getReader();
     const next = reader.read();
     const failure = new Error("a failed");
     a.error(failure);
@@ -86,7 +95,7 @@ describe("merge", () => {
   it("cancels every source when the output is cancelled", async () => {
     const a = manual<number>();
     const b = manual<number>();
-    const reader = merge(a.stream, b.stream).getReader();
+    const reader = merge([a.stream, b.stream]).getReader();
     const pending = reader.read();
     await reader.cancel("stop");
     expect(a.cancels).toEqual(["stop"]);
@@ -97,7 +106,7 @@ describe("merge", () => {
   it("does not cancel a source that already closed", async () => {
     const a = manual<number>();
     const b = manual<number>();
-    const reader = merge(a.stream, b.stream).getReader();
+    const reader = merge([a.stream, b.stream]).getReader();
     const next = reader.read();
     a.close();
     b.push(1);
@@ -115,11 +124,50 @@ describe("merge", () => {
           controller.enqueue(pulls[i]++);
         },
       });
-    const reader = merge(endless(0), endless(1)).getReader();
+    const reader = merge([endless(0), endless(1)]).getReader();
     await reader.read();
     await new Promise((resolve) => setTimeout(resolve, 10));
     // The consumer asked for one chunk: each source is read a bounded number of times, not drained.
     expect(pulls[0] + pulls[1]).toBeLessThan(20);
     await reader.cancel();
+  });
+
+  it("takes streams of different types", async () => {
+    const out: ReadableStream<number | string> = merge([trackedReadableStream(1, 2), stringStream("a")]);
+    expect((await readAll(out)).sort()).toEqual([1, "a"]);
+  });
+
+  it("uses the queuing strategy for the output", async () => {
+    let pulls = 0;
+    const source = new ReadableStream<number>(
+      {
+        pull(controller) {
+          controller.enqueue(pulls++);
+        },
+      },
+      { highWaterMark: 0 },
+    );
+    const reader = merge([source], { queuingStrategy: { highWaterMark: 0 } }).getReader();
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    expect(pulls).toBe(0); // nothing is read before the consumer asks
+    expect(await reader.read()).toEqual({ done: false, value: 0 });
+    await reader.cancel();
+  });
+
+  it("reads ahead up to a higher highWaterMark", async () => {
+    let pulls = 0;
+    const source = new ReadableStream<number>(
+      {
+        pull(controller) {
+          controller.enqueue(pulls++);
+        },
+      },
+      { highWaterMark: 0 },
+    );
+    const output = merge([source], { queuingStrategy: { highWaterMark: 5 } });
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    expect(pulls).toBeGreaterThanOrEqual(5);
+    expect(pulls).toBeLessThan(8);
+    await output.cancel();
   });
 });
