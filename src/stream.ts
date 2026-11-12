@@ -289,6 +289,228 @@ export function throttle<T>(ms: number): TransformStream<T> {
   return new TransformStream(transformer);
 }
 
+export interface BufferTimeOptions {
+  /** Emit as soon as this many chunks were collected, without waiting for the interval. */
+  maxSize?: number;
+}
+
+/**
+ * Collects the chunks and emits them as an array every `ms`; an interval without chunks emits
+ * nothing. When `maxSize` is reached the array is emitted at once and the interval restarts, so
+ * the next array takes `ms` from that moment. The chunks still buffered when the stream ends are emitted as a last array.
+ * The timer ignores backpressure, so a slow consumer makes the arrays queue up.
+ * Throws a `RangeError` unless `maxSize` is a positive integer.
+ */
+export function bufferTime<T>(ms: number, { maxSize = Infinity }: BufferTimeOptions = {}): TransformStream<T, T[]> {
+  if (maxSize !== Infinity && (!Number.isInteger(maxSize) || maxSize < 1)) {
+    throw new RangeError(`bufferTime maxSize must be a positive integer, got ${maxSize}`);
+  }
+  let timer: ReturnType<typeof setInterval> | undefined;
+  let current: T[] = [];
+  const clear = () => {
+    clearInterval(timer);
+    timer = undefined;
+  };
+  const emit = (controller: TransformStreamDefaultController<T[]>) => {
+    if (current.length === 0) return;
+    const batch = current;
+    current = [];
+    controller.enqueue(batch);
+  };
+  const startTimer = (controller: TransformStreamDefaultController<T[]>) => {
+    timer = setInterval(() => emit(controller), ms);
+  };
+  const transformer: CancellableTransformer<T, T[]> = {
+    start: startTimer,
+    transform(data, controller) {
+      current.push(data);
+      if (current.length < maxSize) return;
+      emit(controller);
+      // A full buffer starts a new interval, so the next array never leaves before `ms`.
+      clear();
+      startTimer(controller);
+    },
+    flush(controller) {
+      clear();
+      emit(controller);
+    },
+    cancel: clear,
+  };
+  return new TransformStream(transformer);
+}
+
+/**
+ * Emits the latest chunk every `ms`, if a new one arrived since the last emission.
+ * A chunk still pending when the stream ends is emitted instead of being dropped.
+ * The timer ignores backpressure.
+ */
+export function sampleTime<T>(ms: number): TransformStream<T, T> {
+  let timer: ReturnType<typeof setInterval> | undefined;
+  let latest: { value: T } | undefined;
+  const clear = () => {
+    clearInterval(timer);
+    timer = undefined;
+  };
+  const emit = (controller: TransformStreamDefaultController<T>) => {
+    if (!latest) return;
+    const { value } = latest;
+    latest = undefined;
+    controller.enqueue(value);
+  };
+  const transformer: CancellableTransformer<T, T> = {
+    start(controller) {
+      timer = setInterval(() => emit(controller), ms);
+    },
+    transform(data) {
+      latest = { value: data };
+    },
+    flush(controller) {
+      clear();
+      emit(controller);
+    },
+    cancel: clear,
+  };
+  return new TransformStream(transformer);
+}
+
+export interface SampleRandomOptions {
+  /** Source of randomness, a number in [0, 1). Defaults to `Math.random`. */
+  random?: () => number;
+}
+
+function assertProbability(p: number): void {
+  if (typeof p !== "number" || !(p >= 0 && p <= 1)) {
+    throw new RangeError(`sampleRandom probability must be a number between 0 and 1, got ${p}`);
+  }
+}
+
+/**
+ * Lets each chunk through with probability `p` (0 drops all, 1 keeps all) and drops the rest.
+ * `p` can be a function of the chunk, to weigh by content. A fixed `p` outside [0, 1] throws a
+ * `RangeError`; if the function returns one, the stream errors with that `RangeError`.
+ */
+export function sampleRandom<T>(
+  p: number | ((value: T) => number),
+  { random = Math.random }: SampleRandomOptions = {},
+): TransformStream<T, T> {
+  if (typeof p !== "function") assertProbability(p);
+  return new TransformStream<T, T>({
+    transform(data, controller) {
+      const probability = typeof p === "function" ? p(data) : p;
+      if (typeof p === "function") assertProbability(probability);
+      if (random() < probability) controller.enqueue(data);
+    },
+  });
+}
+
+export interface TimeoutOptions {
+  /**
+   * Called instead of erroring the stream. The output then closes and the source is cancelled
+   * with the `TimeoutError` as the reason.
+   */
+  onTimeout?: () => void;
+}
+
+/**
+ * Passes the chunks through and errors the stream with a `TimeoutError` when the consumer is
+ * waiting and `ms` go by without a chunk from the source. The count starts when the consumer first
+ * asks for data, and only runs while it is waiting: a slow consumer never triggers it. The error
+ * cancels the source.
+ *
+ * Unlike the other transforms it returns a `ReadableWritablePair` instead of a `TransformStream`:
+ * a `TransformStream` gives no signal of when its consumer is waiting, which the timer needs.
+ * It works the same with `pipeThrough`.
+ */
+export function timeout<T>(ms: number, { onTimeout }: TimeoutOptions = {}): ReadableWritablePair<T, T> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  let readable!: ReadableStreamDefaultController<T>;
+  let writable!: WritableStreamDefaultController;
+  // The consumer is waiting for a chunk; `wake` ends the pending `pull` once one is enqueued.
+  let demand = false;
+  let wake: (() => void) | undefined;
+  // Called when a write is waiting for demand and the stream ends meanwhile.
+  let release: (() => void) | undefined;
+  let failure: { error: unknown } | undefined;
+
+  const clear = () => {
+    clearTimeout(timer);
+    timer = undefined;
+  };
+  const fail = (error: unknown) => {
+    clear();
+    failure = { error };
+    writable.error(error);
+    release?.();
+  };
+  const arm = () => {
+    timer = setTimeout(() => {
+      timer = undefined;
+      const error = new DOMException(`No chunk arrived within ${ms}ms`, "TimeoutError");
+      if (!onTimeout) {
+        readable.error(error);
+        fail(error);
+        return;
+      }
+      try {
+        onTimeout();
+        readable.close();
+        fail(error);
+      } catch (thrown) {
+        readable.error(thrown);
+        fail(thrown);
+      }
+    }, ms);
+  };
+
+  return {
+    readable: new ReadableStream<T>(
+      {
+        start(controller) {
+          readable = controller;
+        },
+        pull() {
+          demand = true;
+          arm();
+          release?.();
+          return new Promise<void>((resolve) => {
+            wake = resolve;
+          });
+        },
+        cancel(reason) {
+          fail(reason);
+        },
+      },
+      { highWaterMark: 0 },
+    ),
+    writable: new WritableStream<T>({
+      start(controller) {
+        writable = controller;
+      },
+      async write(chunk) {
+        // Backpressure: the timer is only armed while the consumer waits, never while it is busy.
+        while (!demand && !failure) await new Promise<void>((resolve) => (release = resolve));
+        release = undefined;
+        if (failure) throw failure.error;
+        demand = false;
+        clear();
+        readable.enqueue(chunk);
+        wake?.();
+        wake = undefined;
+      },
+      close() {
+        clear();
+        readable.close();
+        wake?.();
+      },
+      abort(reason) {
+        clear();
+        readable.error(reason);
+        wake?.();
+      },
+    }),
+  };
+}
+
 /** Splits text into lines. `crAsTerminator` also treats a lone `\r` as a line break (SSE rules). */
 function createLineSplitter(emit: (line: string) => void, crAsTerminator: boolean) {
   // Fragments of the line still waiting for its terminator; only each new chunk is scanned.
