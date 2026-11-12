@@ -65,7 +65,35 @@ export function batch<T>(size: number): TransformStream<T, T[]> {
   });
 }
 
-export function concat<T>(...streams: ReadableStream<T>[]): ReadableStream<T> {
+export interface ConcatOptions<T> {
+  /** The queuing strategy of the output stream. Defaults to that of `new ReadableStream()`. */
+  queuingStrategy?: QueuingStrategy<T>;
+}
+
+/** The chunk type of a stream; distributes over a union of streams. */
+type StreamChunk<S> = S extends ReadableStream<infer T> ? T : never;
+
+/**
+ * Emits every chunk of the first stream, then of the second, and so on. A stream is only opened
+ * once the previous one closes. It errors as soon as one errors, cancelling the rest; cancelling
+ * the output cancels every stream not finished yet.
+ * `queuingStrategy` sizes the output's queue, as in `new ReadableStream()`.
+ */
+export function concat<const S extends readonly ReadableStream<unknown>[]>(
+  streams: S,
+  options?: ConcatOptions<StreamChunk<S[number]>>,
+): ReadableStream<StreamChunk<S[number]>>;
+/**
+ * @deprecated Pass the streams as an array, as `merge` takes them: `concat([a, b])`. The variadic
+ * form will be removed with the other deprecated APIs.
+ */
+export function concat<T>(...streams: ReadableStream<T>[]): ReadableStream<T>;
+export function concat<T>(
+  ...args: [streams: readonly ReadableStream<T>[], options?: ConcatOptions<T>] | ReadableStream<T>[]
+): ReadableStream<T> {
+  const [streams, { queuingStrategy } = {}] = Array.isArray(args[0])
+    ? (args as [readonly ReadableStream<T>[], ConcatOptions<T>?])
+    : [args as ReadableStream<T>[]];
   let index = 0;
   let reader: ReadableStreamDefaultReader<T> | undefined;
 
@@ -76,29 +104,32 @@ export function concat<T>(...streams: ReadableStream<T>[]): ReadableStream<T> {
     return cancelAll(pending);
   };
 
-  return new ReadableStream<T>({
-    async pull(controller) {
-      try {
-        while (index < streams.length) {
-          reader ??= streams[index].getReader();
-          const result = await reader.read();
-          if (!result.done) {
-            controller.enqueue(result.value);
-            return;
+  return new ReadableStream<T>(
+    {
+      async pull(controller) {
+        try {
+          while (index < streams.length) {
+            reader ??= streams[index].getReader();
+            const result = await reader.read();
+            if (!result.done) {
+              controller.enqueue(result.value);
+              return;
+            }
+            reader.releaseLock();
+            reader = undefined;
+            index++;
           }
-          reader.releaseLock();
-          reader = undefined;
-          index++;
+        } catch (error) {
+          // Cancelling an errored stream rejects with its stored error, which is rethrown below.
+          await cancelRest(error).catch(() => {});
+          throw error;
         }
-      } catch (error) {
-        // Cancelling an errored stream rejects with its stored error, which is rethrown below.
-        await cancelRest(error).catch(() => {});
-        throw error;
-      }
-      controller.close();
+        controller.close();
+      },
+      cancel: cancelRest,
     },
-    cancel: cancelRest,
-  });
+    queuingStrategy,
+  );
 }
 
 // `cancel` is in the Streams spec but missing from the DOM typings of the TypeScript we build with.
@@ -216,9 +247,6 @@ export interface MergeOptions<T> {
   /** The queuing strategy of the output stream. Defaults to that of `new ReadableStream()`. */
   queuingStrategy?: QueuingStrategy<T>;
 }
-
-/** The chunk type of a stream; distributes over a union of streams. */
-type StreamChunk<S> = S extends ReadableStream<infer T> ? T : never;
 
 /**
  * Emits the chunks of every stream as soon as they arrive. It closes when all of them have closed,

@@ -72,7 +72,7 @@ const streamCases: Record<string, (source: ReadableStream<number>) => ReadableSt
   sampleRandom: (s) => s.pipeThrough(streamOps.sampleRandom(1)),
   timeout: (s) => s.pipeThrough(streamOps.timeout(1000)),
   zipWith: (s) => s.pipeThrough(streamOps.zipWith(trackedReadableStream(0, 100))),
-  concat: (s) => streamOps.concat(s, trackedReadableStream(0, 100)),
+  concat: (s) => streamOps.concat([s, trackedReadableStream(0, 100)]),
   zip: (s) => streamOps.zip(s, trackedReadableStream(0, 100)),
   merge: (s) => streamOps.merge([s, trackedReadableStream(0, 100)]),
 };
@@ -206,7 +206,7 @@ describe("stream operators", () => {
     const a = trackedReadableStream(1, 100);
     const b = trackedReadableStream(1, 100);
     const combine = {
-      concat: streamOps.concat<number>,
+      concat: (x: ReadableStream<number>, y: ReadableStream<number>) => streamOps.concat([x, y]),
       zip: streamOps.zip<number, number>,
       merge: (x: ReadableStream<number>, y: ReadableStream<number>) => streamOps.merge([x, y]),
     }[name];
