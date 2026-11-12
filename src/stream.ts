@@ -405,7 +405,8 @@ export function sampleRandom<T>(
 
 export interface TimeoutOptions {
   /**
-   * Called instead of erroring the stream. The output then closes and the source is cancelled.
+   * Called instead of erroring the stream. The output then closes and the source is cancelled
+   * with the `TimeoutError` as the reason.
    */
   onTimeout?: () => void;
 }
@@ -415,6 +416,10 @@ export interface TimeoutOptions {
  * waiting and `ms` go by without a chunk from the source. The count starts when the consumer first
  * asks for data, and only runs while it is waiting: a slow consumer never triggers it. The error
  * cancels the source.
+ *
+ * Unlike the other transforms it returns a `ReadableWritablePair` instead of a `TransformStream`:
+ * a `TransformStream` gives no signal of when its consumer is waiting, which the timer needs.
+ * It works the same with `pipeThrough`.
  */
 export function timeout<T>(ms: number, { onTimeout }: TimeoutOptions = {}): ReadableWritablePair<T, T> {
   let timer: ReturnType<typeof setTimeout> | undefined;
