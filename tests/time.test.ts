@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { bufferTime, sample, timeout } from "../src/stream.ts";
+import { bufferTime, sampleRandom, sampleTime, timeout } from "../src/stream.ts";
 
 beforeEach(() => {
   vi.useFakeTimers();
@@ -96,9 +96,9 @@ describe("bufferTime", () => {
   });
 });
 
-describe("sample", () => {
+describe("sampleTime", () => {
   it("emits only the latest chunk of each interval, and only if there is a new one", async () => {
-    const { out, writer } = setup(sample<number>(100));
+    const { out, writer } = setup(sampleTime<number>(100));
     await writer.write(1);
     await writer.write(2);
     await writer.write(3);
@@ -114,14 +114,14 @@ describe("sample", () => {
   });
 
   it("emits a falsy chunk", async () => {
-    const { out, writer } = setup(sample<number>(100));
+    const { out, writer } = setup(sampleTime<number>(100));
     await writer.write(0);
     await vi.advanceTimersByTimeAsync(100);
     expect(out).toEqual([0]);
   });
 
   it("emits the pending chunk when the stream ends", async () => {
-    const { out, state, writer } = setup(sample<number>(1000));
+    const { out, state, writer } = setup(sampleTime<number>(1000));
     await writer.write(1);
     await writer.write(2);
     await writer.close();
@@ -132,14 +132,14 @@ describe("sample", () => {
   });
 
   it("clears its timer when the output is cancelled", async () => {
-    const { reader } = setup(sample<number>(1000));
+    const { reader } = setup(sampleTime<number>(1000));
     expect(vi.getTimerCount()).toBe(1);
     await reader.cancel();
     expect(vi.getTimerCount()).toBe(0);
   });
 
   it("clears its timer when the input is aborted", async () => {
-    const { writer } = setup(sample<number>(1000));
+    const { writer } = setup(sampleTime<number>(1000));
     await writer.abort(new Error("source failed"));
     await vi.advanceTimersByTimeAsync(0);
     expect(vi.getTimerCount()).toBe(0);
@@ -255,5 +255,57 @@ describe("timeout", () => {
     await writer.abort(new Error("source failed"));
     await vi.advanceTimersByTimeAsync(0);
     expect(vi.getTimerCount()).toBe(0);
+  });
+});
+
+describe("sampleRandom", () => {
+  async function run<T>(transform: TransformStream<T, T>, input: T[]) {
+    const out: T[] = [];
+    const writer = transform.writable.getWriter();
+    const reading = (async () => {
+      for await (const value of transform.readable) out.push(value);
+    })();
+    for (const value of input) await writer.write(value);
+    await writer.close();
+    await reading;
+    return out;
+  }
+
+  it("keeps a chunk when random() < p", async () => {
+    const values = [0.1, 0.5, 0.2, 0.9];
+    const random = () => values.shift()!;
+    expect(await run(sampleRandom<number>(0.5, { random }), [1, 2, 3, 4])).toEqual([1, 3]);
+  });
+
+  it("keeps everything with p = 1 and nothing with p = 0", async () => {
+    expect(await run(sampleRandom<number>(1, { random: () => 0.999 }), [1, 2])).toEqual([1, 2]);
+    expect(await run(sampleRandom<number>(0, { random: () => 0 }), [1, 2])).toEqual([]);
+  });
+
+  it("keeps falsy chunks", async () => {
+    expect(await run(sampleRandom<number | string>(1), [0, ""])).toEqual([0, ""]);
+  });
+
+  it("accepts a probability per chunk", async () => {
+    const out = await run(
+      sampleRandom<string>((line) => (line.startsWith("error") ? 1 : 0), { random: () => 0.5 }),
+      ["debug a", "error b", "debug c"],
+    );
+    expect(out).toEqual(["error b"]);
+  });
+
+  it("throws a RangeError for an invalid fixed probability", () => {
+    for (const p of [-0.1, 1.1, NaN]) expect(() => sampleRandom(p)).toThrow(RangeError);
+  });
+
+  it("errors the stream when the probability function returns an invalid value", async () => {
+    const transform = sampleRandom<number>(() => 2);
+    const reading = transform.readable.getReader().read();
+    const writer = transform.writable.getWriter();
+    const writing = writer.write(1);
+    await Promise.all([
+      expect(reading).rejects.toBeInstanceOf(RangeError),
+      expect(writing).rejects.toBeInstanceOf(RangeError),
+    ]);
   });
 });

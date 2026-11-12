@@ -344,7 +344,7 @@ export function bufferTime<T>(ms: number, { maxSize = Infinity }: BufferTimeOpti
  * A chunk still pending when the stream ends is emitted instead of being dropped.
  * The timer ignores backpressure.
  */
-export function sample<T>(ms: number): TransformStream<T, T> {
+export function sampleTime<T>(ms: number): TransformStream<T, T> {
   let timer: ReturnType<typeof setInterval> | undefined;
   let latest: { value: T } | undefined;
   const clear = () => {
@@ -371,6 +371,36 @@ export function sample<T>(ms: number): TransformStream<T, T> {
     cancel: clear,
   };
   return new TransformStream(transformer);
+}
+
+export interface SampleRandomOptions {
+  /** Source of randomness, a number in [0, 1). Defaults to `Math.random`. */
+  random?: () => number;
+}
+
+function assertProbability(p: number): void {
+  if (typeof p !== "number" || !(p >= 0 && p <= 1)) {
+    throw new RangeError(`sampleRandom probability must be a number between 0 and 1, got ${p}`);
+  }
+}
+
+/**
+ * Lets each chunk through with probability `p` (0 drops all, 1 keeps all) and drops the rest.
+ * `p` can be a function of the chunk, to weigh by content. A fixed `p` outside [0, 1] throws a
+ * `RangeError`; if the function returns one, the stream errors with that `RangeError`.
+ */
+export function sampleRandom<T>(
+  p: number | ((value: T) => number),
+  { random = Math.random }: SampleRandomOptions = {},
+): TransformStream<T, T> {
+  if (typeof p !== "function") assertProbability(p);
+  return new TransformStream<T, T>({
+    transform(data, controller) {
+      const probability = typeof p === "function" ? p(data) : p;
+      if (typeof p === "function") assertProbability(probability);
+      if (random() < probability) controller.enqueue(data);
+    },
+  });
 }
 
 export interface TimeoutOptions {
