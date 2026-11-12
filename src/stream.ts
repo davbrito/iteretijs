@@ -221,8 +221,27 @@ export function merge<T>(...streams: ReadableStream<T>[]): ReadableStream<T> {
   type Settled = { index: number } & ({ result: ReadableStreamReadResult<T> } | { error: unknown });
   const readers = streams.map((stream) => stream.getReader());
   const open = new Set(readers.keys());
-  const reading = new Map<number, Promise<Settled>>();
+  // The sources with a read in flight, and the reads that settled and were not handled yet, in
+  // arrival order. A queue instead of `Promise.race`: racing a source that stays silent would add
+  // a reaction to its pending read on every chunk of the others, which is never freed.
+  const reading = new Set<number>();
+  const settled: Settled[] = [];
+  let wake: (() => void) | undefined;
   let cancelled = false;
+
+  const read = (index: number) => {
+    reading.add(index);
+    // The handlers turn a failure into a value, so a read nobody waits for cannot go unhandled.
+    void readers[index].read().then(
+      (result) => arrive({ index, result }),
+      (error: unknown) => arrive({ index, error }),
+    );
+  };
+  const arrive = (item: Settled) => {
+    settled.push(item);
+    wake?.();
+    wake = undefined;
+  };
 
   /** Cancels the sources that have not closed. */
   const cancelOpen = (reason?: unknown) => {
@@ -234,32 +253,23 @@ export function merge<T>(...streams: ReadableStream<T>[]): ReadableStream<T> {
   return new ReadableStream<T>({
     async pull(controller) {
       while (open.size > 0) {
-        for (const index of open) {
-          // These promises never reject, so a read nobody waits for cannot go unhandled.
-          if (reading.has(index)) continue;
-          reading.set(
-            index,
-            readers[index].read().then(
-              (result): Settled => ({ index, result }),
-              (error): Settled => ({ index, error }),
-            ),
-          );
-        }
-        const settled = await Promise.race(reading.values());
-        reading.delete(settled.index);
+        for (const index of open) if (!reading.has(index)) read(index);
+        while (settled.length === 0) await new Promise<void>((resolve) => (wake = resolve));
+        const next = settled.shift()!;
+        reading.delete(next.index);
         if (cancelled) return;
 
-        if ("error" in settled) {
-          open.delete(settled.index);
-          // Cancelling an errored stream rejects with its stored error, which is rethrown below.
-          await cancelOpen(settled.error).catch(() => {});
-          throw settled.error;
+        if ("error" in next) {
+          open.delete(next.index);
+          // The output errors with the source's error; a failure while cancelling the rest is dropped.
+          await cancelOpen(next.error).catch(() => {});
+          throw next.error;
         }
-        if (settled.result.done) {
-          open.delete(settled.index);
+        if (next.result.done) {
+          open.delete(next.index);
           continue;
         }
-        controller.enqueue(settled.result.value);
+        controller.enqueue(next.result.value);
         return;
       }
       controller.close();
