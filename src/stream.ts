@@ -249,9 +249,12 @@ export interface MergeOptions<T> {
 }
 
 /**
- * Emits the chunks of every stream as soon as they arrive. It closes when all of them have closed,
- * and errors as soon as one errors, cancelling the rest. Cancelling the output cancels every source.
- * Each source is read only while the consumer pulls, and holds at most one unconsumed chunk.
+ * Emits the chunks of every stream as soon as they arrive. It closes when all of them have closed.
+ * It errors when it reads a failure from one of them, and cancels the rest; cancelling the output
+ * cancels every source. Each source is read only while the output's queue has room, and holds at
+ * most one unconsumed chunk. So with a full queue a failure is noticed on a later read, and once the
+ * output errors, the chunks still in its queue are dropped, as with any `ReadableStream`.
+ * Throws a `TypeError` if a stream is locked, e.g. passed twice, and then leaves every stream unlocked.
  * `queuingStrategy` sizes the output's queue, as in `new ReadableStream()`: a `highWaterMark` of 0
  * reads the sources only when the consumer asks, a higher one reads ahead.
  */
@@ -261,7 +264,14 @@ export function merge<const S extends readonly ReadableStream<unknown>[]>(
 ): ReadableStream<StreamChunk<S[number]>> {
   type T = StreamChunk<S[number]>;
   type Settled = { index: number } & ({ result: ReadableStreamReadResult<T> } | { error: unknown });
-  const readers = streams.map((stream) => stream.getReader() as ReadableStreamDefaultReader<T>);
+  const readers: ReadableStreamDefaultReader<T>[] = [];
+  try {
+    for (const stream of streams) readers.push(stream.getReader() as ReadableStreamDefaultReader<T>);
+  } catch (error) {
+    // A locked stream, e.g. the same one twice: give back the streams locked so far.
+    for (const reader of readers) reader.releaseLock();
+    throw error;
+  }
   const open = new Set(readers.keys());
   // The sources with a read in flight, and the reads that settled and were not handled yet, in
   // arrival order. A queue instead of `Promise.race`: racing a source that stays silent would add

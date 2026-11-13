@@ -75,7 +75,7 @@ ReadableStream.from(["a", "b"]).pipeThrough(enumerate()); // [0, "a"], [1, "b"]
 iota(3); // 0, 1, 2
 ```
 
-`merge` closes when all the streams have closed, errors as soon as one errors (cancelling the rest), and reads each stream only while the consumer pulls. `concat` and `merge` take the streams as an array and, as a second argument, the output's `queuingStrategy`: `merge([a, b], { queuingStrategy: { highWaterMark: 0 } })` reads nothing before the consumer asks. `concat(a, b)`, with the streams as separate arguments, still works but is deprecated.
+`merge` closes when all the streams have closed, errors when it reads a failure from one (cancelling the rest), and reads each stream only while the output's queue has room. `concat` and `merge` take the streams as an array and, as a second argument, the output's `queuingStrategy`: `merge([a, b], { queuingStrategy: { highWaterMark: 0 } })` reads nothing before the consumer asks. `concat(a, b)`, with the streams as separate arguments, still works but is deprecated.
 
 `zip` and `zipWith` close their output as soon as either stream ends, and cancel the one that is still open.
 

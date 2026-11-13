@@ -170,4 +170,25 @@ describe("merge", () => {
     expect(pulls).toBeLessThan(8);
     await output.cancel();
   });
+
+  it("throws for a stream passed twice and leaves it unlocked", () => {
+    const a = manual<number>();
+    expect(() => merge([a.stream, a.stream])).toThrow(TypeError);
+    expect(a.stream.locked).toBe(false);
+  });
+
+  it("delivers the queued chunks before the error of a source that failed while nobody read", async () => {
+    const a = manual<number>();
+    const b = manual<number>();
+    const reader = merge([a.stream, b.stream]).getReader();
+    a.push(1);
+    b.push(2);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    const failure = new Error("a failed");
+    a.error(failure);
+    expect(await reader.read()).toEqual({ done: false, value: 1 });
+    expect(await reader.read()).toEqual({ done: false, value: 2 });
+    await expect(reader.read()).rejects.toBe(failure);
+    expect(b.cancels).toEqual([failure]);
+  });
 });
