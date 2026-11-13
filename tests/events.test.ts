@@ -1,5 +1,8 @@
 import { describe, expect, it, vi } from "vitest";
 import { fromEvents } from "../src/stream.ts";
+// A `read()` reaches the stream's `pull` a few microtasks later; real events always come in a later
+// task, so the tests wait one `tick` before dispatching to a consumer that is waiting.
+import { tick } from "./utils.ts";
 
 /** An `EventTarget` that tracks the listeners still attached for `"ping"`. */
 class Target extends EventTarget {
@@ -33,12 +36,6 @@ class Target extends EventTarget {
     this.dispatchEvent(new CustomEvent("ping", { detail }));
   }
 }
-
-/**
- * A `read()` reaches the stream's `pull` a few microtasks later; real events always come in a later
- * task, so the tests wait one before dispatching to a consumer that is waiting.
- */
-const tick = () => new Promise((resolve) => setTimeout(resolve, 0));
 
 const details = (events: CustomEvent<number>[]) => events.map((event) => event.detail);
 

@@ -197,3 +197,14 @@ export const asyncExits = {
     } catch {}
   },
 };
+
+/** Lets every pending microtask and the current macrotask run. */
+export const tick = () => new Promise<void>((resolve) => setTimeout(resolve, 0));
+
+/** A promise the test settles by hand. */
+export function deferred<T = void>() {
+  let resolve!: (value: T) => void;
+  let reject!: (reason: unknown) => void;
+  const promise = new Promise<T>((res, rej) => ([resolve, reject] = [res, rej]));
+  return { promise, resolve, reject };
+}

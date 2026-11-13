@@ -1,17 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { parallel, toArray } from "../src/async.ts";
-import { asyncExits, trackedAsyncIterable, trackedIterable, trackedReadableStream } from "./utils.ts";
-
-/** A promise the test settles by hand. */
-function deferred<T = void>() {
-  let resolve!: (value: T) => void;
-  let reject!: (reason: unknown) => void;
-  const promise = new Promise<T>((res, rej) => ([resolve, reject] = [res, rej]));
-  return { promise, resolve, reject };
-}
-
-/** Lets every pending microtask and macrotask run. */
-const tick = () => new Promise((resolve) => setTimeout(resolve, 0));
+import { asyncExits, deferred, tick, trackedAsyncIterable, trackedIterable, trackedReadableStream } from "./utils.ts";
 
 /**
  * An `fn` whose calls the test settles by hand, recording which are running. With `followSignal`, a call
@@ -224,7 +213,7 @@ describe("parallel", () => {
   it("rejects with the signal's reason when it aborts, aborting the calls", async () => {
     const controller = new AbortController();
     const source = trackedAsyncIterable(0, 10);
-    const { fn, signals } = manualFn<number>();
+    const { fn, calls, signals } = manualFn<number>();
     const it = parallel(source, fn, { concurrency: 2, signal: controller.signal });
     const first = it.next();
     await tick();
@@ -237,6 +226,65 @@ describe("parallel", () => {
     first.catch(() => {}).finally(() => (settled = true));
     await tick();
     expect(settled).toBe(false);
+    for (const call of calls.values()) call.resolve("late");
+    await expect(first).rejects.toBe(reason);
+    expect(source.returns).toBe(1);
+  });
+
+  it("aborts the running calls when the signal aborts while the consumer is not reading", async () => {
+    const controller = new AbortController();
+    const { fn, calls, signals } = manualFn<number>({ followSignal: true });
+    const it = parallel([1, 2, 3], fn, { concurrency: 2, ordered: false, signal: controller.signal });
+    const first = it.next();
+    await tick();
+    calls.get(1)!.resolve("one");
+    expect(await first).toEqual({ done: false, value: "one" });
+    await tick(); // no read is pending; call 2 is still running
+    controller.abort("stop");
+    expect(signals.map((s) => s.aborted)).toEqual([true, true]);
+    await expect(it.next()).rejects.toBe("stop");
+  });
+
+  it("aborts the other calls when one rejects while the consumer is not reading", async () => {
+    const { fn, calls, signals } = manualFn<number>({ followSignal: true });
+    const it = parallel([1, 2, 3], fn, { concurrency: 3, ordered: false });
+    const first = it.next();
+    await tick();
+    calls.get(1)!.resolve("one");
+    expect(await first).toEqual({ done: false, value: "one" });
+    const failure = new Error("call failed");
+    calls.get(2)!.reject(failure);
+    await tick();
+    expect(signals[2].aborted).toBe(true);
+    expect(signals[2].reason).toBe(failure);
+    await expect(it.next()).rejects.toBe(failure);
+  });
+
+  it("does not call fn for an item still being read when the consumer exits", async () => {
+    let i = 0;
+    const source: AsyncIterable<number> = {
+      [Symbol.asyncIterator]: () => ({
+        async next() {
+          await tick();
+          await tick();
+          return { done: false, value: i++ };
+        },
+        async return() {
+          return { done: true, value: undefined };
+        },
+      }),
+    };
+    const seen: number[] = [];
+    for await (const _ of parallel(source, (x) => seen.push(x), { concurrency: 2, ordered: false })) break;
+    expect(seen).toEqual([0]);
+  });
+
+  it("keeps the order across many results", async () => {
+    const items = Array.from({ length: 3000 }, (_, i) => i);
+    const out = await toArray(
+      parallel(items, (x) => (x % 3 ? x : new Promise<number>((r) => setTimeout(r, 0, x))), { concurrency: Infinity }),
+    );
+    expect(out).toEqual(items);
   });
 
   it("settles once the calls follow the signal", async () => {

@@ -275,8 +275,11 @@ export interface ParallelOptions {
  * free slot: a result that is ready but not read yet keeps its slot. Items of a sync iterable are passed
  * to `fn` as they are, without awaiting them.
  *
- * The first rejection, of a call or of the source, stops reading the source and is thrown by the next
- * read, even if earlier results (with `ordered: true`) are still pending.
+ * The first rejection, of a call or of the source, stops reading the source, aborts the calls still
+ * running and is thrown by the next read, even if earlier results (with `ordered: true`) are still pending.
+ *
+ * Like any async generator, `return()` waits for a read that is still pending, and that read can wait for
+ * the running calls. To stop while a read is pending (after a timeout, for example), abort `options.signal`.
  *
  * Throws a `RangeError` for an invalid `concurrency` and a `TypeError` if `fn` is not a function.
  *
@@ -313,40 +316,46 @@ async function* runParallel<T, U>(
   const controller = new AbortController();
   // Wakes the loop below when anything changes: a pull or a call settles, or `signal` aborts.
   let notify = () => {};
-  const onAbort = () => notify();
+  // Aborts the running calls right away, even while the consumer is not reading.
+  const onAbort = () => {
+    controller.abort(signal!.reason);
+    notify();
+  };
   signal?.addEventListener("abort", onAbort, { once: true });
 
   // Ordered: every call not read yet, in source order. Unordered: the settled calls not read yet.
+  // Read from `queueHead` on, so taking the next entry is O(1); the read entries are dropped in batches.
   const queue: Settled<Awaited<U>>[] = [];
+  let queueHead = 0;
   const running = new Set<Promise<void>>();
   let slots = 0; // calls started and not read yet
   let index = 0;
-  let sourceDone = false;
-  let sourceOpen = true; // false once the source is done or rejected, so it must not get `return()`
+  let sourceDone = false; // the source completed or rejected, so it must not get `return()`
   let pulling: Promise<void> | undefined;
   let failed = false;
   let failure: unknown;
 
   const fail = (error: unknown) => {
-    if (!failed) [failed, failure] = [true, error];
+    if (failed) return;
+    [failed, failure] = [true, error];
+    controller.abort(error);
   };
 
   const start = (value: T) => {
     const settled: Settled<Awaited<U>> = { status: "pending" };
     if (ordered) queue.push(settled);
     slots++;
-    const call = (async () => fn(value, index++, controller.signal))().then(
-      (value) => Object.assign(settled, { status: "fulfilled", value }),
-      (reason) => {
-        Object.assign(settled, { status: "rejected", reason });
-        fail(reason);
-      },
-    );
-    const task = call.then(() => {
+    const settle = (result: Settled<Awaited<U>>) => {
+      Object.assign(settled, result);
       running.delete(task);
+      if (result.status === "rejected") fail(result.reason);
       if (!ordered) queue.push(settled);
       notify();
-    });
+    };
+    const task: Promise<void> = (async (): Promise<Awaited<U>> => await fn(value, index++, controller.signal))().then(
+      (value) => settle({ status: "fulfilled", value }),
+      (reason) => settle({ status: "rejected", reason }),
+    );
     running.add(task);
   };
 
@@ -354,14 +363,14 @@ async function* runParallel<T, U>(
     pulling = step(iterator).then(
       (result) => {
         pulling = undefined;
-        if (result.done) [sourceDone, sourceOpen] = [true, false];
-        // Once stopping, the item is dropped; the source stays open and gets `return()`.
-        else if (!failed && !signal?.aborted) start(result.value);
+        if (result.done) sourceDone = true;
+        // Once stopping (a failure, an abort or an early exit), the item is dropped; the source gets `return()`.
+        else if (!controller.signal.aborted) start(result.value);
         notify();
       },
       (error) => {
         pulling = undefined;
-        [sourceDone, sourceOpen] = [true, false];
+        sourceDone = true;
         fail(error);
         notify();
       },
@@ -374,9 +383,13 @@ async function* runParallel<T, U>(
       if (failed) throw failure;
       signal?.throwIfAborted();
 
-      const head = queue[0];
+      const head = queue[queueHead];
       if (head && head.status === "fulfilled") {
-        queue.shift();
+        queue[queueHead++] = undefined!;
+        if (queueHead >= 1024 && queueHead * 2 >= queue.length) {
+          queue.splice(0, queueHead);
+          queueHead = 0;
+        }
         slots--;
         yield head.value;
         continue;
@@ -395,7 +408,7 @@ async function* runParallel<T, U>(
     // `return()` must not be called while a `next()` is still in flight.
     await pulling;
     await Promise.all(running);
-    if (sourceOpen) await closeAll([iterator], error !== undefined);
+    if (!sourceDone) await closeAll([iterator], error !== undefined);
   }
 }
 
