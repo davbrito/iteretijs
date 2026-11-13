@@ -370,6 +370,116 @@ export function iota(n = Infinity): ReadableStream<number> {
   });
 }
 
+/** What `fromEvents` does with an event that arrives while its buffer is full. */
+export type FromEventsStrategy = "drop-oldest" | "drop-newest" | "error";
+
+export interface FromEventsOptions {
+  /**
+   * How many events are kept while the consumer is busy: `Infinity` (the default) or a
+   * non-negative integer. With 0, an event is only kept if the consumer is already waiting for one,
+   * so with the default `"error"` strategy an event that arrives while the consumer is busy errors
+   * the stream (use `"drop-newest"` or `"drop-oldest"` to ignore it). A `read()` reaches the stream a
+   * few microtasks later, so an event dispatched synchronously after it may still count as busy.
+   */
+  buffer?: number;
+  /**
+   * What happens to an event that arrives with a full buffer: `"drop-oldest"` discards the oldest
+   * buffered event to make room, `"drop-newest"` discards the new one, and `"error"` (the default)
+   * errors the stream with a `RangeError` once the events already buffered have been read.
+   */
+  strategy?: FromEventsStrategy;
+  /** Aborting it removes the listener and errors the stream with the signal's reason. */
+  signal?: AbortSignal;
+  /** Passed to `addEventListener`. */
+  capture?: boolean;
+  /** Passed to `addEventListener`. */
+  passive?: boolean;
+}
+
+const fromEventsStrategies: readonly string[] = ["drop-oldest", "drop-newest", "error"];
+
+/**
+ * The events of type `type` dispatched on `target`, as a stream. The listener is added at once, so
+ * the events dispatched before the first read are buffered, and it is removed when the stream is
+ * cancelled (which `for await` does when the loop exits early), errors, or `signal` aborts. The
+ * stream never closes on its own.
+ * Throws a `RangeError` for an invalid `buffer` or `strategy`.
+ */
+export function fromEvents<E extends Event = Event>(
+  target: EventTarget,
+  type: string,
+  { buffer = Infinity, strategy = "error", signal, capture, passive }: FromEventsOptions = {},
+): ReadableStream<E> {
+  if (buffer !== Infinity && (!Number.isInteger(buffer) || buffer < 0)) {
+    throw new RangeError(`fromEvents buffer must be a non-negative integer or Infinity, got ${buffer}`);
+  }
+  if (!fromEventsStrategies.includes(strategy)) {
+    throw new RangeError(`fromEvents strategy must be one of ${fromEventsStrategies.join(", ")}, got ${strategy}`);
+  }
+
+  // The stream's own queue cannot drop its oldest chunk, so the events wait here and the stream
+  // (with a high water mark of 0) only receives one when the consumer asks for it.
+  const queue: E[] = [];
+  // The consumer is waiting for an event and the queue is empty.
+  let waiting = false;
+  let finished = false;
+  // Set when the buffer overflowed: the events already queued are still delivered, then it errors.
+  let overflow: RangeError | undefined;
+  const listening = new AbortController();
+  let controller!: ReadableStreamDefaultController<E>;
+
+  const stopListening = () => {
+    listening.abort();
+    signal?.removeEventListener("abort", onAbort);
+  };
+  /** Removes the listener and drops the buffered events; `end` errors the output. */
+  const finish = (end?: () => void) => {
+    if (finished) return;
+    finished = true;
+    stopListening();
+    queue.length = 0;
+    end?.();
+  };
+  const onAbort = () => finish(() => controller.error(signal!.reason));
+  const onEvent = (event: Event) => {
+    if (waiting) {
+      waiting = false;
+      controller.enqueue(event as E);
+    } else if (queue.length < buffer) {
+      queue.push(event as E);
+    } else if (strategy === "drop-oldest") {
+      if (buffer === 0) return;
+      queue.shift();
+      queue.push(event as E);
+    } else if (strategy === "error") {
+      overflow = new RangeError(`fromEvents buffer overflow: more than ${buffer} "${type}" events waiting`);
+      stopListening();
+      if (queue.length === 0) finish(() => controller.error(overflow));
+    }
+    // "drop-newest": the event is discarded.
+  };
+
+  return new ReadableStream<E>(
+    {
+      start(c) {
+        controller = c;
+        if (signal?.aborted) return onAbort();
+        signal?.addEventListener("abort", onAbort, { once: true });
+        target.addEventListener(type, onEvent, { capture, passive, signal: listening.signal });
+      },
+      pull() {
+        if (queue.length > 0) controller.enqueue(queue.shift()!);
+        else if (overflow) finish(() => controller.error(overflow));
+        else waiting = true;
+      },
+      cancel() {
+        finish();
+      },
+    },
+    { highWaterMark: 0 },
+  );
+}
+
 export function debounce<T>(ms: number): TransformStream<T> {
   let timer: ReturnType<typeof setTimeout> | undefined;
   const clear = () => {
