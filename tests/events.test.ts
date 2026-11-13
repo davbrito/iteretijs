@@ -188,7 +188,11 @@ describe("fromEvents", () => {
     const target = new Target();
     const add = vi.spyOn(target, "addEventListener");
     fromEvents(target, "ping", { capture: true, passive: true });
-    expect(add).toHaveBeenCalledWith("ping", expect.any(Function), expect.objectContaining({ capture: true, passive: true }));
+    expect(add).toHaveBeenCalledWith(
+      "ping",
+      expect.any(Function),
+      expect.objectContaining({ capture: true, passive: true }),
+    );
   });
 
   it("drops the oldest events with drop-oldest", async () => {
