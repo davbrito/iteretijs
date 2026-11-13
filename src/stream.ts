@@ -68,6 +68,8 @@ export function batch<T>(size: number): TransformStream<T, T[]> {
 export interface ConcatOptions<T> {
   /** The queuing strategy of the output stream. Defaults to that of `new ReadableStream()`. */
   queuingStrategy?: QueuingStrategy<T>;
+  /** Aborting it errors the output with the signal's reason and cancels every stream not finished yet. */
+  signal?: AbortSignal;
 }
 
 /** The chunk type of a stream; distributes over a union of streams. */
@@ -77,7 +79,8 @@ type StreamChunk<S> = S extends ReadableStream<infer T> ? T : never;
  * Emits every chunk of the first stream, then of the second, and so on. A stream is only opened
  * once the previous one closes. It errors as soon as one errors, cancelling the rest; cancelling
  * the output cancels every stream not finished yet.
- * `queuingStrategy` sizes the output's queue, as in `new ReadableStream()`.
+ * `queuingStrategy` sizes the output's queue, as in `new ReadableStream()`. Aborting `signal` errors
+ * the output with its reason and cancels every stream not finished yet.
  */
 export function concat<const S extends readonly ReadableStream<unknown>[]>(
   streams: S,
@@ -91,7 +94,7 @@ export function concat<T>(...streams: ReadableStream<T>[]): ReadableStream<T>;
 export function concat<T>(
   ...args: [streams: readonly ReadableStream<T>[], options?: ConcatOptions<T>] | ReadableStream<T>[]
 ): ReadableStream<T> {
-  const [streams, { queuingStrategy } = {}] = Array.isArray(args[0])
+  const [streams, { queuingStrategy, signal } = {}] = Array.isArray(args[0])
     ? (args as [readonly ReadableStream<T>[], ConcatOptions<T>?])
     : [args as ReadableStream<T>[]];
   let index = 0;
@@ -104,7 +107,7 @@ export function concat<T>(
     return cancelAll(pending);
   };
 
-  return new ReadableStream<T>(
+  return abortableStream<T>(
     {
       async pull(controller) {
         try {
@@ -128,6 +131,7 @@ export function concat<T>(
       },
       cancel: cancelRest,
     },
+    signal,
     queuingStrategy,
   );
 }
@@ -196,56 +200,74 @@ export function zipWith<T, U>(stream: ReadableStream<U>): TransformStream<T, [T,
   return new TransformStream(transformer);
 }
 
-export function zip<T, U>(stream1: ReadableStream<T>, stream2: ReadableStream<U>): ReadableStream<[T, U]> {
+export interface ZipOptions {
+  /** Aborting it errors the output with the signal's reason and cancels both streams. */
+  signal?: AbortSignal;
+}
+
+/**
+ * Pairs the chunks of both streams, and closes as soon as one of them closes, cancelling the other.
+ * Aborting `signal` errors the output with its reason and cancels both streams.
+ */
+export function zip<T, U>(
+  stream1: ReadableStream<T>,
+  stream2: ReadableStream<U>,
+  { signal }: ZipOptions = {},
+): ReadableStream<[T, U]> {
   const reader1 = stream1.getReader();
   const reader2 = stream2.getReader();
 
-  return new ReadableStream<[T, U]>({
-    async pull(controller) {
-      // Cancelling the other reader as soon as one read ends or fails settles its pending read
-      // with `done`, so an idle source cannot keep the output waiting.
-      const read = <V>(reader: ReadableStreamDefaultReader<V>, other: ReadableStreamDefaultReader<unknown>) =>
-        reader.read().then(
-          (result) => {
-            if (result.done) other.cancel().catch(() => {});
-            return result;
-          },
-          (error) => {
-            other.cancel(error).catch(() => {});
-            throw error;
-          },
-        );
-      // Wait for both reads, so a failure never leaves the other one in flight.
-      const [result1, result2] = await Promise.allSettled([read(reader1, reader2), read(reader2, reader1)]);
+  return abortableStream<[T, U]>(
+    {
+      async pull(controller) {
+        // Cancelling the other reader as soon as one read ends or fails settles its pending read
+        // with `done`, so an idle source cannot keep the output waiting.
+        const read = <V>(reader: ReadableStreamDefaultReader<V>, other: ReadableStreamDefaultReader<unknown>) =>
+          reader.read().then(
+            (result) => {
+              if (result.done) other.cancel().catch(() => {});
+              return result;
+            },
+            (error) => {
+              other.cancel(error).catch(() => {});
+              throw error;
+            },
+          );
+        // Wait for both reads, so a failure never leaves the other one in flight.
+        const [result1, result2] = await Promise.allSettled([read(reader1, reader2), read(reader2, reader1)]);
 
-      if (result1.status === "rejected" || result2.status === "rejected") {
-        const error = result1.status === "rejected" ? result1.reason : (result2 as PromiseRejectedResult).reason;
-        // Cancelling an errored stream rejects with its stored error, which is rethrown below.
-        await cancelAll([reader1.cancel(error), reader2.cancel(error)]).catch(() => {});
-        throw error;
-      }
+        if (result1.status === "rejected" || result2.status === "rejected") {
+          const error = result1.status === "rejected" ? result1.reason : (result2 as PromiseRejectedResult).reason;
+          // Cancelling an errored stream rejects with its stored error, which is rethrown below.
+          await cancelAll([reader1.cancel(error), reader2.cancel(error)]).catch(() => {});
+          throw error;
+        }
 
-      if (result1.value.done || result2.value.done) {
-        // Only cancel what is still open.
-        await cancelAll([
-          result1.value.done ? undefined : reader1.cancel(),
-          result2.value.done ? undefined : reader2.cancel(),
-        ]);
-        controller.close();
-        return;
-      }
+        if (result1.value.done || result2.value.done) {
+          // Only cancel what is still open.
+          await cancelAll([
+            result1.value.done ? undefined : reader1.cancel(),
+            result2.value.done ? undefined : reader2.cancel(),
+          ]);
+          controller.close();
+          return;
+        }
 
-      controller.enqueue([result1.value.value, result2.value.value]);
+        controller.enqueue([result1.value.value, result2.value.value]);
+      },
+      cancel(reason) {
+        return cancelAll([reader1.cancel(reason), reader2.cancel(reason)]);
+      },
     },
-    cancel(reason) {
-      return cancelAll([reader1.cancel(reason), reader2.cancel(reason)]);
-    },
-  });
+    signal,
+  );
 }
 
 export interface MergeOptions<T> {
   /** The queuing strategy of the output stream. Defaults to that of `new ReadableStream()`. */
   queuingStrategy?: QueuingStrategy<T>;
+  /** Aborting it errors the output with the signal's reason and cancels every source. */
+  signal?: AbortSignal;
 }
 
 /**
@@ -256,11 +278,12 @@ export interface MergeOptions<T> {
  * output errors, the chunks still in its queue are dropped, as with any `ReadableStream`.
  * Throws a `TypeError` if a stream is locked, e.g. passed twice, and then leaves every stream unlocked.
  * `queuingStrategy` sizes the output's queue, as in `new ReadableStream()`: a `highWaterMark` of 0
- * reads the sources only when the consumer asks, a higher one reads ahead.
+ * reads the sources only when the consumer asks, a higher one reads ahead. Aborting `signal` errors
+ * the output with its reason and cancels every source.
  */
 export function merge<const S extends readonly ReadableStream<unknown>[]>(
   streams: S,
-  { queuingStrategy }: MergeOptions<StreamChunk<S[number]>> = {},
+  { queuingStrategy, signal }: MergeOptions<StreamChunk<S[number]>> = {},
 ): ReadableStream<StreamChunk<S[number]>> {
   type T = StreamChunk<S[number]>;
   type Settled = { index: number } & ({ result: ReadableStreamReadResult<T> } | { error: unknown });
@@ -302,7 +325,7 @@ export function merge<const S extends readonly ReadableStream<unknown>[]>(
     return cancelAll(pending);
   };
 
-  return new ReadableStream<T>(
+  return abortableStream<T>(
     {
       async pull(controller) {
         while (open.size > 0) {
@@ -332,6 +355,82 @@ export function merge<const S extends readonly ReadableStream<unknown>[]>(
         return cancelOpen(reason);
       },
     },
+    signal,
+    queuingStrategy,
+  );
+}
+
+/**
+ * A `ReadableStream` over `source` that also follows `signal`: aborting it, even before the first read,
+ * errors the stream with the signal's reason and calls `source.cancel` with it, so the sources are
+ * cancelled. The listener is removed once the stream closes, errors or is cancelled. Once aborted, the
+ * controller methods given to `source` do nothing, so a `pull` still in flight ends quietly.
+ */
+function abortableStream<T>(
+  source: UnderlyingDefaultSource<T>,
+  signal: AbortSignal | undefined,
+  queuingStrategy?: QueuingStrategy<T>,
+): ReadableStream<T> {
+  if (!signal) return new ReadableStream(source, queuingStrategy);
+
+  let controller!: ReadableStreamDefaultController<T>;
+  let finished = false;
+  const finish = () => {
+    finished = true;
+    signal.removeEventListener("abort", onAbort);
+  };
+  const onAbort = () => {
+    if (finished) return;
+    finish();
+    controller.error(signal.reason);
+    // The output already errored with the reason; a failure while cancelling the sources is dropped.
+    void (async () => source.cancel?.(signal.reason))().catch(() => {});
+  };
+  // What `source` sees: it stops working once the stream is finished, as an aborted stream must not
+  // close or receive chunks, and closing or erroring it finishes it.
+  const guarded: ReadableStreamDefaultController<T> = {
+    get desiredSize() {
+      return controller.desiredSize;
+    },
+    enqueue: (chunk) => {
+      if (!finished) controller.enqueue(chunk);
+    },
+    close: () => {
+      if (finished) return;
+      finish();
+      controller.close();
+    },
+    error: (error) => {
+      if (finished) return;
+      finish();
+      controller.error(error);
+    },
+  };
+
+  return new ReadableStream<T>(
+    {
+      start(c) {
+        controller = c;
+        if (signal.aborted) return onAbort();
+        signal.addEventListener("abort", onAbort, { once: true });
+        return source.start?.(guarded);
+      },
+      async pull() {
+        if (finished) return;
+        try {
+          await source.pull?.(guarded);
+        } catch (error) {
+          if (finished) return;
+          finish();
+          throw error;
+        }
+      },
+      cancel(reason) {
+        if (finished) return;
+        finish();
+        return source.cancel?.(reason);
+      },
+    },
     queuingStrategy,
   );
 }
@@ -352,22 +451,31 @@ export function enumerate<T>(): TransformStream<T, [number, T]> {
   });
 }
 
-export function iota(n = Infinity): ReadableStream<number> {
+export interface IotaOptions {
+  /** Aborting it errors the stream with the signal's reason. */
+  signal?: AbortSignal;
+}
+
+/** The numbers from 0 to `n - 1`, one per macrotask. Aborting `signal` errors the stream with its reason. */
+export function iota(n = Infinity, { signal }: IotaOptions = {}): ReadableStream<number> {
   let index = 0;
-  return new ReadableStream({
-    pull(controller) {
-      return new Promise((resolve) => {
-        setTimeout(() => {
-          if (index < n) {
-            controller.enqueue(index++);
-          } else {
-            controller.close();
-          }
-          resolve();
-        }, 0);
-      });
+  return abortableStream<number>(
+    {
+      pull(controller) {
+        return new Promise((resolve) => {
+          setTimeout(() => {
+            if (index < n) {
+              controller.enqueue(index++);
+            } else {
+              controller.close();
+            }
+            resolve();
+          }, 0);
+        });
+      },
     },
-  });
+    signal,
+  );
 }
 
 /** What `fromEvents` does with an event that arrives while its buffer is full. */

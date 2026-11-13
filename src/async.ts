@@ -311,7 +311,7 @@ async function* runParallel<T, U>(
   signal: AbortSignal | undefined,
 ): AsyncGenerator<Awaited<U>, void, unknown> {
   signal?.throwIfAborted();
-  const iterator = toAsyncIterator(source);
+  const iterator = toAsyncIterator(source, "parallel");
 
   const controller = new AbortController();
   // Wakes the loop below when anything changes: a pull or a call settles, or `signal` aborts.
@@ -413,7 +413,7 @@ async function* runParallel<T, U>(
 }
 
 /** The async iterator of `source`, or its sync iterator adapted to the async protocol. */
-function toAsyncIterator<T>(source: Iterable<T> | AsyncIterable<T>): AsyncIterator<T> {
+function toAsyncIterator<T>(source: Iterable<T> | AsyncIterable<T>, name: string): AsyncIterator<T> {
   if (typeof (source as AsyncIterable<T>)?.[Symbol.asyncIterator] === "function") {
     return (source as AsyncIterable<T>)[Symbol.asyncIterator]();
   }
@@ -424,5 +424,75 @@ function toAsyncIterator<T>(source: Iterable<T> | AsyncIterable<T>): AsyncIterat
       return: async () => iterator.return?.() ?? { done: true, value: undefined },
     };
   }
-  throw new TypeError("parallel source must be an iterable or an async iterable");
+  throw new TypeError(`${name} source must be an iterable or an async iterable`);
+}
+
+/**
+ * Yields the items of `source` until `signal` aborts, then rejects with the signal's reason, even while
+ * a read of `source` is pending. Use it to stop any async iterable from outside: the async operators
+ * here, the native async iterator helpers, a `ReadableStream`, or a generator of your own.
+ *
+ * On abort, or when the consumer stops early, the source is closed with `return()` (a stream is
+ * cancelled). If a read was pending, the abort does not wait for it: the source is closed once that read
+ * settles, and a failure while closing it is dropped.
+ *
+ * With an already aborted `signal`, the first read rejects without opening the source.
+ */
+export async function* abortable<T>(
+  source: Iterable<T> | AsyncIterable<T>,
+  signal: AbortSignal,
+): AsyncGenerator<T, void, unknown> {
+  signal.throwIfAborted();
+  const iterator = toAsyncIterator(source, "abortable");
+
+  // Rejects the read in progress. Not a `Promise.race` with one long-lived abort promise, which would
+  // keep a reaction per item for as long as the signal lives.
+  let interrupt: ((reason: unknown) => void) | undefined;
+  const onAbort = () => interrupt?.(signal.reason);
+  signal.addEventListener("abort", onAbort, { once: true });
+
+  type Outcome = { result: Awaited<ReturnType<typeof step<T>>> } | { error: unknown };
+  // A read that is still in flight when the generator stops, e.g. on abort.
+  let pending: Promise<Outcome> | undefined;
+  let open = true; // false once the source is done or rejected, so it must not get `return()`
+  let failed = false;
+
+  try {
+    for (;;) {
+      signal.throwIfAborted();
+      pending = step(iterator).then(
+        (result) => ({ result }),
+        (error: unknown) => ({ error }),
+      );
+      const read = pending;
+      const outcome = await new Promise<Outcome>((resolve, reject) => {
+        interrupt = reject;
+        void read.then(resolve);
+      });
+      interrupt = undefined;
+      pending = undefined;
+      if ("error" in outcome) {
+        open = false;
+        throw outcome.error;
+      }
+      if (outcome.result.done) {
+        open = false;
+        return;
+      }
+      yield outcome.result.value;
+    }
+  } catch (error) {
+    failed = true;
+    throw error;
+  } finally {
+    signal.removeEventListener("abort", onAbort);
+    if (pending) {
+      // `return()` must not be called while a `next()` is in flight, and the abort must not wait for it.
+      void pending.then((outcome) => {
+        if ("result" in outcome && !outcome.result.done) return closeAll([iterator], true);
+      });
+    } else if (open) {
+      await closeAll([iterator], failed);
+    }
+  }
 }
