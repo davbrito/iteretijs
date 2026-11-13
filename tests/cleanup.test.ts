@@ -16,7 +16,7 @@ import { asyncExits, exits, trackedAsyncIterable, trackedIterable, trackedReadab
 const notApplicable = {
   sync: ["iota", "range"],
   async: ["toArray", "count"],
-  stream: ["transform", "iota", "lines", "ndjson", "sse"], // the parsers are covered in parsers.test.ts
+  stream: ["transform", "iota", "lines", "ndjson", "sse", "fromEvents"], // the parsers are covered in parsers.test.ts, fromEvents (no source stream) in events.test.ts
 };
 
 /**

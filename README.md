@@ -108,6 +108,23 @@ for await (const { event, data, id, retry } of text.pipeThrough(sse())) {
 }
 ```
 
+### Events as a stream: `fromEvents`
+
+`fromEvents(target, type)` turns the events of any `EventTarget` (DOM elements, `AbortSignal`, Node's `EventTarget`) into a `ReadableStream`, so they work with `for await` and with every operator here. Node's `events.on()` is Node-only and buffers without limit for an `EventTarget`, and the Observable proposal's `when()` is only in Chromium and is not async iterable.
+
+```ts
+import { fromEvents, throttle } from "iteretijs/stream";
+
+for await (const click of fromEvents<MouseEvent>(button, "click", { signal }).pipeThrough(throttle(100))) {
+  // … leaving the loop removes the listener
+}
+
+fromEvents(input, "input", { buffer: 1, strategy: "drop-oldest" }); // a slow consumer only sees the latest event
+fromEvents(socket, "message", { buffer: 1000 }); // errors with a RangeError past 1000 unread events
+```
+
+The listener is added at once, so events dispatched before the first read are kept. While the consumer is busy, up to `buffer` events wait (`Infinity` by default); when it is full, `strategy` decides: `"error"` (the default) errors the stream, `"drop-oldest"` and `"drop-newest"` discard an event. The listener is removed when the stream is cancelled (as `for await` does when the loop exits early), errors, or `signal` aborts (the stream errors with its reason). The stream never closes on its own.
+
 ### Batching a stream: `batch`
 
 `Iterator.prototype.chunks` only covers iterators, so `batch(size)` groups the chunks of a stream into arrays. The last array holds the remainder, and a `size` that is not a positive integer throws a `RangeError`:
