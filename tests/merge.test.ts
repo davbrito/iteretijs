@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { merge } from "../src/stream.ts";
-import { trackedReadableStream } from "./utils.ts";
+import { tick, trackedReadableStream } from "./utils.ts";
 
 /** A stream whose chunks the test pushes by hand. */
 function manual<T>() {
@@ -183,7 +183,7 @@ describe("merge", () => {
     const reader = merge([a.stream, b.stream]).getReader();
     a.push(1);
     b.push(2);
-    await new Promise((resolve) => setTimeout(resolve, 0));
+    await tick();
     const failure = new Error("a failed");
     a.error(failure);
     expect(await reader.read()).toEqual({ done: false, value: 1 });

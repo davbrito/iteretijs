@@ -185,6 +185,25 @@ for await (const value of concat(first, second)) console.log(value);
 for await (const [a, b] of zip(first, second)) console.log(a, b);
 ```
 
+### Limiting concurrency: `parallel`
+
+`parallel` calls a function on each item of a sync or async iterable (or a `ReadableStream`), with at most `concurrency` calls at once, and yields the results. The async iterator helpers have no concurrency limit, so this stays supported.
+
+```ts
+import { parallel } from "iteretijs/async";
+
+const fetchJson = (url: string, _index: number, signal: AbortSignal) => fetch(url, { signal }).then((r) => r.json());
+
+for await (const data of parallel(urls, fetchJson, { concurrency: 8 })) console.log(data); // in the order of urls
+for await (const data of parallel(urls, fetchJson, { concurrency: 8, ordered: false })) console.log(data); // as they finish
+```
+
+- `ordered: true` (the default) yields in the order of the source, `false` in the order the calls finish. A result that is ready but not read yet keeps its slot, so at most `concurrency` results are ever held.
+- The function gets the item, its index and an `AbortSignal`. That signal aborts when a call rejects, when you stop reading (`break`), or when the `signal` option aborts. Pass it on so the running calls stop quickly: `parallel` waits for them to settle before it rejects or finishes, and then closes the source.
+- The source is read one item at a time, never with overlapping `next()` calls.
+- Like any async generator, `return()` waits for a read that is still pending, and that read can wait for the running calls. To stop while a read is pending (after a timeout, for example), abort the `signal` option.
+- The first error, from a call or from the source, is thrown by the next read. With the `signal` option, the error is the signal's reason.
+
 ## Migration guide
 
 These APIs are deprecated, because the platform covers them or is about to. Instead of the iteretijs version, use:

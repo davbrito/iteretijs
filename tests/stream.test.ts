@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import { batch, concat, debounce, take, throttle, zip, zipWith } from "../src/stream.ts";
-import { dumbReadableStream, trackedReadableStream } from "./utils.ts";
+import { dumbReadableStream, tick, trackedReadableStream } from "./utils.ts";
 
 async function readAll<T>(stream: ReadableStream<T>) {
   const items: T[] = [];
@@ -117,7 +117,7 @@ describe("zipWith", () => {
     expect(await reader.read()).toEqual({ done: false, value: [0, 10] });
     // `other` is read ahead, so its failure is seen at once while the main stream may still produce
     // items: let the end of the main stream reach the transformer before `other` fails.
-    await new Promise((resolve) => setTimeout(resolve, 0));
+    await tick();
     controller.error(new Error("late"));
     await expect(reader.read()).resolves.toEqual({ done: true, value: undefined });
   }, 1000);

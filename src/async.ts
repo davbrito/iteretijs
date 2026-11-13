@@ -250,3 +250,179 @@ export async function count<T>(iterable: AsyncIterable<T>): Promise<number> {
 
   return count;
 }
+
+export interface ParallelOptions {
+  /** How many items may be processed, or wait to be read, at the same time. A positive integer or `Infinity`. */
+  concurrency: number;
+  /**
+   * `true` (default) yields the results in the order of the source; `false` yields each one as soon as it
+   * is ready.
+   */
+  ordered?: boolean;
+  /** Aborting it stops `parallel`, which then rejects with the signal's reason. */
+  signal?: AbortSignal;
+}
+
+/**
+ * Calls `fn` on each item of `source` with at most `concurrency` calls at once, and yields the results.
+ *
+ * `fn` gets the item, its index and an `AbortSignal` that aborts when `parallel` stops early: when a call
+ * rejects, when the consumer stops reading (`break` in a `for await`), or when `options.signal` aborts.
+ * Before finishing, `parallel` waits for the calls still running to settle and closes the source, so pass
+ * the signal on (to `fetch`, for example) to make that quick.
+ *
+ * The source is read one item at a time, never with overlapping `next()` calls, and only while there is a
+ * free slot: a result that is ready but not read yet keeps its slot. Items of a sync iterable are passed
+ * to `fn` as they are, without awaiting them.
+ *
+ * The first rejection, of a call or of the source, stops reading the source, aborts the calls still
+ * running and is thrown by the next read, even if earlier results (with `ordered: true`) are still pending.
+ *
+ * Like any async generator, `return()` waits for a read that is still pending, and that read can wait for
+ * the running calls. To stop while a read is pending (after a timeout, for example), abort `options.signal`.
+ *
+ * Throws a `RangeError` for an invalid `concurrency` and a `TypeError` if `fn` is not a function.
+ *
+ * Not planned for deprecation: no TC39 proposal limits concurrency yet. The closest are the async iterator
+ * helpers (Stage 2), whose helpers run concurrently only when `next()` is called concurrently, and the
+ * concurrency control and unordered async iterator helpers proposals (Stage 1).
+ */
+export function parallel<T, U>(
+  source: Iterable<T> | AsyncIterable<T>,
+  fn: (value: T, index: number, signal: AbortSignal) => U | PromiseLike<U>,
+  { concurrency, ordered = true, signal }: ParallelOptions,
+): AsyncGenerator<Awaited<U>, void, unknown> {
+  if (concurrency !== Infinity && !(Number.isInteger(concurrency) && concurrency > 0)) {
+    throw new RangeError(`parallel concurrency must be a positive integer or Infinity, got ${concurrency}`);
+  }
+  if (typeof fn !== "function") {
+    throw new TypeError(`parallel fn must be a function, got ${typeof fn}`);
+  }
+  return runParallel(source, fn, concurrency, ordered, signal);
+}
+
+type Settled<U> = { status: "pending" } | { status: "fulfilled"; value: U } | { status: "rejected"; reason: unknown };
+
+async function* runParallel<T, U>(
+  source: Iterable<T> | AsyncIterable<T>,
+  fn: (value: T, index: number, signal: AbortSignal) => U | PromiseLike<U>,
+  concurrency: number,
+  ordered: boolean,
+  signal: AbortSignal | undefined,
+): AsyncGenerator<Awaited<U>, void, unknown> {
+  signal?.throwIfAborted();
+  const iterator = toAsyncIterator(source);
+
+  const controller = new AbortController();
+  // Wakes the loop below when anything changes: a pull or a call settles, or `signal` aborts.
+  let notify = () => {};
+  // Aborts the running calls right away, even while the consumer is not reading.
+  const onAbort = () => {
+    controller.abort(signal!.reason);
+    notify();
+  };
+  signal?.addEventListener("abort", onAbort, { once: true });
+
+  // Ordered: every call not read yet, in source order. Unordered: the settled calls not read yet.
+  // Read from `queueHead` on, so taking the next entry is O(1); the read entries are dropped in batches.
+  const queue: Settled<Awaited<U>>[] = [];
+  let queueHead = 0;
+  const running = new Set<Promise<void>>();
+  let slots = 0; // calls started and not read yet
+  let index = 0;
+  let sourceDone = false; // the source completed or rejected, so it must not get `return()`
+  let pulling: Promise<void> | undefined;
+  let failed = false;
+  let failure: unknown;
+
+  const fail = (error: unknown) => {
+    if (failed) return;
+    [failed, failure] = [true, error];
+    controller.abort(error);
+  };
+
+  const start = (value: T) => {
+    const settled: Settled<Awaited<U>> = { status: "pending" };
+    if (ordered) queue.push(settled);
+    slots++;
+    const settle = (result: Settled<Awaited<U>>) => {
+      Object.assign(settled, result);
+      running.delete(task);
+      if (result.status === "rejected") fail(result.reason);
+      if (!ordered) queue.push(settled);
+      notify();
+    };
+    const task: Promise<void> = (async (): Promise<Awaited<U>> => await fn(value, index++, controller.signal))().then(
+      (value) => settle({ status: "fulfilled", value }),
+      (reason) => settle({ status: "rejected", reason }),
+    );
+    running.add(task);
+  };
+
+  const pull = () => {
+    pulling = step(iterator).then(
+      (result) => {
+        pulling = undefined;
+        if (result.done) sourceDone = true;
+        // Once stopping (a failure, an abort or an early exit), the item is dropped; the source gets `return()`.
+        else if (!controller.signal.aborted) start(result.value);
+        notify();
+      },
+      (error) => {
+        pulling = undefined;
+        sourceDone = true;
+        fail(error);
+        notify();
+      },
+    );
+  };
+
+  let error: { reason: unknown } | undefined;
+  try {
+    for (;;) {
+      if (failed) throw failure;
+      signal?.throwIfAborted();
+
+      const head = queue[queueHead];
+      if (head && head.status === "fulfilled") {
+        queue[queueHead++] = undefined!;
+        if (queueHead >= 1024 && queueHead * 2 >= queue.length) {
+          queue.splice(0, queueHead);
+          queueHead = 0;
+        }
+        slots--;
+        yield head.value;
+        continue;
+      }
+      if (sourceDone && slots === 0 && !pulling) return;
+
+      if (!sourceDone && !pulling && slots < concurrency) pull();
+      await new Promise<void>((resolve) => (notify = resolve));
+    }
+  } catch (reason) {
+    error = { reason };
+    throw reason;
+  } finally {
+    signal?.removeEventListener("abort", onAbort);
+    controller.abort(error?.reason);
+    // `return()` must not be called while a `next()` is still in flight.
+    await pulling;
+    await Promise.all(running);
+    if (!sourceDone) await closeAll([iterator], error !== undefined);
+  }
+}
+
+/** The async iterator of `source`, or its sync iterator adapted to the async protocol. */
+function toAsyncIterator<T>(source: Iterable<T> | AsyncIterable<T>): AsyncIterator<T> {
+  if (typeof (source as AsyncIterable<T>)?.[Symbol.asyncIterator] === "function") {
+    return (source as AsyncIterable<T>)[Symbol.asyncIterator]();
+  }
+  if (typeof (source as Iterable<T>)?.[Symbol.iterator] === "function") {
+    const iterator = (source as Iterable<T>)[Symbol.iterator]();
+    return {
+      next: async () => iterator.next(),
+      return: async () => iterator.return?.() ?? { done: true, value: undefined },
+    };
+  }
+  throw new TypeError("parallel source must be an iterable or an async iterable");
+}
