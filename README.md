@@ -204,6 +204,43 @@ for await (const data of parallel(urls, fetchJson, { concurrency: 8, ordered: fa
 - Like any async generator, `return()` waits for a read that is still pending, and that read can wait for the running calls. To stop while a read is pending (after a timeout, for example), abort the `signal` option.
 - The first error, from a call or from the source, is thrown by the next read. With the `signal` option, the error is the signal's reason.
 
+### Cancellation: `signal`, `abortable` and `using`
+
+Every async API here can be stopped from outside and cleans up what it opened. Which tool to use depends on what you hold:
+
+| You have                                                             | To stop it with an `AbortSignal`                                       |
+| -------------------------------------------------------------------- | ---------------------------------------------------------------------- |
+| a stream made here: `concat`, `merge`, `zip`, `iota`, `fromEvents`   | the `signal` option                                                    |
+| a pipe through an operator (`map`, `batch`, `debounce`…)             | the native `pipeThrough(op, { signal })` or `pipeTo(dest, { signal })` |
+| `parallel`                                                           | its `signal` option, which also reaches your function                  |
+| any other async iterable: the async operators, a generator, a stream | wrap it: `abortable(iterable, signal)` from `iteretijs/async`          |
+
+```ts
+import { abortable } from "iteretijs/async";
+import { fromEvents, iota, merge } from "iteretijs/stream";
+
+const ticks = merge([iota(Infinity, { signal }), fromEvents(socket, "message", { signal })], { signal });
+
+for await (const line of abortable(readLines(file), AbortSignal.timeout(5000))) console.log(line);
+```
+
+The conventions are the same everywhere:
+
+- Aborting rejects the read in progress, or the next one, with `signal.reason`, and cancels or closes the sources. A stream errors with the reason, and a source stream is cancelled with it (an iterator's `return()` takes no reason).
+- A signal that is already aborted rejects the first read and does not open the sources (a stream source is cancelled).
+- Aborting after the stream or the iteration finished does nothing: the listener is removed as soon as it ends, errors or is cancelled. Until then the signal keeps it, and what it reads, alive: if you stop reading early, close it (`break` in a `for await`, `return()`, `cancel()` or `using`) instead of just dropping it, above all with a long-lived signal.
+
+Every iterator returned here is a generator or an async generator, so it already has `Symbol.dispose` or `Symbol.asyncDispose` (Node.js 24; the deprecated `iterateStream` implements it itself): `using` and `await using` close it, and its sources, at the end of the block.
+
+```ts
+{
+  await using lines = abortable(readLines(file), signal);
+  const header = await lines.next();
+} // the file is closed here
+```
+
+`ReadableStream` has no `Symbol.asyncDispose` yet. Iterate it, or use its iterator: `await using it = stream.values()` cancels the stream at the end of the block.
+
 ## Migration guide
 
 These APIs are deprecated, because the platform covers them or is about to. Instead of the iteretijs version, use:

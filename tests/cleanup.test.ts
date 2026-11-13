@@ -52,6 +52,7 @@ const asyncCases: Record<string, AsyncCase<AsyncIterable<number>>> = {
   concat: { build: ([a, b]) => asyncOps.concat(a, b), returns: [1, 0] },
   zip: { build: ([a, b]) => asyncOps.zip(a, b), returns: [1, 1] },
   parallel: { build: ([a]) => asyncOps.parallel(a, (x) => x, { concurrency: 2 }), returns: [1] },
+  abortable: { build: ([a]) => asyncOps.abortable(a, new AbortController().signal), returns: [1] },
 };
 
 // Each case gets the tracked stream as the first source and returns the readable side.
