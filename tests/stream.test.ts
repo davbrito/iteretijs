@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { batch, debounce, take, throttle, zip, zipWith } from "../src/stream.ts";
+import { batch, concat, debounce, take, throttle, zip, zipWith } from "../src/stream.ts";
 import { dumbReadableStream, trackedReadableStream } from "./utils.ts";
 
 async function readAll<T>(stream: ReadableStream<T>) {
@@ -10,6 +10,49 @@ async function readAll<T>(stream: ReadableStream<T>) {
   }
   return items;
 }
+
+describe("concat", () => {
+  it("emits the streams one after another", async () => {
+    expect(await readAll(concat([trackedReadableStream(0, 2), trackedReadableStream(5, 7)]))).toEqual([0, 1, 5, 6]);
+  });
+
+  it("closes right away without streams", async () => {
+    expect(await readAll(concat([]))).toEqual([]);
+  });
+
+  it("takes streams of different types", async () => {
+    const strings = new ReadableStream<string>({
+      start(controller) {
+        controller.enqueue("a");
+        controller.close();
+      },
+    });
+    const out: ReadableStream<number | string> = concat([trackedReadableStream(1, 2), strings]);
+    expect(await readAll(out)).toEqual([1, "a"]);
+  });
+
+  it("uses the queuing strategy for the output", async () => {
+    let pulls = 0;
+    const source = new ReadableStream<number>(
+      {
+        pull(controller) {
+          controller.enqueue(pulls++);
+        },
+      },
+      { highWaterMark: 0 },
+    );
+    const reader = concat([source], { queuingStrategy: { highWaterMark: 0 } }).getReader();
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    expect(pulls).toBe(0);
+    expect(await reader.read()).toEqual({ done: false, value: 0 });
+    await reader.cancel();
+  });
+
+  it("still accepts the deprecated variadic form", async () => {
+    expect(await readAll(concat(trackedReadableStream(0, 2), trackedReadableStream(5, 6)))).toEqual([0, 1, 5]);
+    expect(await readAll(concat())).toEqual([]);
+  });
+});
 
 describe("zipWith", () => {
   it("pairs each value with the next value of the other stream", async () => {

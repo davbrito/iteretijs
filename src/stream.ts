@@ -65,7 +65,35 @@ export function batch<T>(size: number): TransformStream<T, T[]> {
   });
 }
 
-export function concat<T>(...streams: ReadableStream<T>[]): ReadableStream<T> {
+export interface ConcatOptions<T> {
+  /** The queuing strategy of the output stream. Defaults to that of `new ReadableStream()`. */
+  queuingStrategy?: QueuingStrategy<T>;
+}
+
+/** The chunk type of a stream; distributes over a union of streams. */
+type StreamChunk<S> = S extends ReadableStream<infer T> ? T : never;
+
+/**
+ * Emits every chunk of the first stream, then of the second, and so on. A stream is only opened
+ * once the previous one closes. It errors as soon as one errors, cancelling the rest; cancelling
+ * the output cancels every stream not finished yet.
+ * `queuingStrategy` sizes the output's queue, as in `new ReadableStream()`.
+ */
+export function concat<const S extends readonly ReadableStream<unknown>[]>(
+  streams: S,
+  options?: ConcatOptions<StreamChunk<S[number]>>,
+): ReadableStream<StreamChunk<S[number]>>;
+/**
+ * @deprecated Pass the streams as an array, as `merge` takes them: `concat([a, b])`. The variadic
+ * form will be removed with the other deprecated APIs.
+ */
+export function concat<T>(...streams: ReadableStream<T>[]): ReadableStream<T>;
+export function concat<T>(
+  ...args: [streams: readonly ReadableStream<T>[], options?: ConcatOptions<T>] | ReadableStream<T>[]
+): ReadableStream<T> {
+  const [streams, { queuingStrategy } = {}] = Array.isArray(args[0])
+    ? (args as [readonly ReadableStream<T>[], ConcatOptions<T>?])
+    : [args as ReadableStream<T>[]];
   let index = 0;
   let reader: ReadableStreamDefaultReader<T> | undefined;
 
@@ -76,29 +104,32 @@ export function concat<T>(...streams: ReadableStream<T>[]): ReadableStream<T> {
     return cancelAll(pending);
   };
 
-  return new ReadableStream<T>({
-    async pull(controller) {
-      try {
-        while (index < streams.length) {
-          reader ??= streams[index].getReader();
-          const result = await reader.read();
-          if (!result.done) {
-            controller.enqueue(result.value);
-            return;
+  return new ReadableStream<T>(
+    {
+      async pull(controller) {
+        try {
+          while (index < streams.length) {
+            reader ??= streams[index].getReader();
+            const result = await reader.read();
+            if (!result.done) {
+              controller.enqueue(result.value);
+              return;
+            }
+            reader.releaseLock();
+            reader = undefined;
+            index++;
           }
-          reader.releaseLock();
-          reader = undefined;
-          index++;
+        } catch (error) {
+          // Cancelling an errored stream rejects with its stored error, which is rethrown below.
+          await cancelRest(error).catch(() => {});
+          throw error;
         }
-      } catch (error) {
-        // Cancelling an errored stream rejects with its stored error, which is rethrown below.
-        await cancelRest(error).catch(() => {});
-        throw error;
-      }
-      controller.close();
+        controller.close();
+      },
+      cancel: cancelRest,
     },
-    cancel: cancelRest,
-  });
+    queuingStrategy,
+  );
 }
 
 // `cancel` is in the Streams spec but missing from the DOM typings of the TypeScript we build with.
@@ -210,6 +241,99 @@ export function zip<T, U>(stream1: ReadableStream<T>, stream2: ReadableStream<U>
       return cancelAll([reader1.cancel(reason), reader2.cancel(reason)]);
     },
   });
+}
+
+export interface MergeOptions<T> {
+  /** The queuing strategy of the output stream. Defaults to that of `new ReadableStream()`. */
+  queuingStrategy?: QueuingStrategy<T>;
+}
+
+/**
+ * Emits the chunks of every stream as soon as they arrive. It closes when all of them have closed.
+ * It errors when it reads a failure from one of them, and cancels the rest; cancelling the output
+ * cancels every source. Each source is read only while the output's queue has room, and holds at
+ * most one unconsumed chunk. So with a full queue a failure is noticed on a later read, and once the
+ * output errors, the chunks still in its queue are dropped, as with any `ReadableStream`.
+ * Throws a `TypeError` if a stream is locked, e.g. passed twice, and then leaves every stream unlocked.
+ * `queuingStrategy` sizes the output's queue, as in `new ReadableStream()`: a `highWaterMark` of 0
+ * reads the sources only when the consumer asks, a higher one reads ahead.
+ */
+export function merge<const S extends readonly ReadableStream<unknown>[]>(
+  streams: S,
+  { queuingStrategy }: MergeOptions<StreamChunk<S[number]>> = {},
+): ReadableStream<StreamChunk<S[number]>> {
+  type T = StreamChunk<S[number]>;
+  type Settled = { index: number } & ({ result: ReadableStreamReadResult<T> } | { error: unknown });
+  const readers: ReadableStreamDefaultReader<T>[] = [];
+  try {
+    for (const stream of streams) readers.push(stream.getReader() as ReadableStreamDefaultReader<T>);
+  } catch (error) {
+    // A locked stream, e.g. the same one twice: give back the streams locked so far.
+    for (const reader of readers) reader.releaseLock();
+    throw error;
+  }
+  const open = new Set(readers.keys());
+  // The sources with a read in flight, and the reads that settled and were not handled yet, in
+  // arrival order. A queue instead of `Promise.race`: racing a source that stays silent would add
+  // a reaction to its pending read on every chunk of the others, which is never freed.
+  const reading = new Set<number>();
+  const settled: Settled[] = [];
+  let wake: (() => void) | undefined;
+  let cancelled = false;
+
+  const read = (index: number) => {
+    reading.add(index);
+    // The handlers turn a failure into a value, so a read nobody waits for cannot go unhandled.
+    void readers[index].read().then(
+      (result) => arrive({ index, result }),
+      (error: unknown) => arrive({ index, error }),
+    );
+  };
+  const arrive = (item: Settled) => {
+    settled.push(item);
+    wake?.();
+    wake = undefined;
+  };
+
+  /** Cancels the sources that have not closed. */
+  const cancelOpen = (reason?: unknown) => {
+    const pending = [...open].map((index) => readers[index].cancel(reason));
+    open.clear();
+    return cancelAll(pending);
+  };
+
+  return new ReadableStream<T>(
+    {
+      async pull(controller) {
+        while (open.size > 0) {
+          for (const index of open) if (!reading.has(index)) read(index);
+          while (settled.length === 0) await new Promise<void>((resolve) => (wake = resolve));
+          const next = settled.shift()!;
+          reading.delete(next.index);
+          if (cancelled) return;
+
+          if ("error" in next) {
+            open.delete(next.index);
+            // The output errors with the source's error; a failure while cancelling the rest is dropped.
+            await cancelOpen(next.error).catch(() => {});
+            throw next.error;
+          }
+          if (next.result.done) {
+            open.delete(next.index);
+            continue;
+          }
+          controller.enqueue(next.result.value);
+          return;
+        }
+        controller.close();
+      },
+      cancel(reason) {
+        cancelled = true;
+        return cancelOpen(reason);
+      },
+    },
+    queuingStrategy,
+  );
 }
 
 /** Waits for every promise, then rejects with the first failure, if any. */

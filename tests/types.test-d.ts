@@ -1,6 +1,7 @@
 import { describe, expectTypeOf, it } from "vitest";
 import * as asyncOps from "../src/async.ts";
 import * as syncOps from "../src/index.ts";
+import * as streamOps from "../src/stream.ts";
 
 describe("sync results are generators", () => {
   it("inherit the native iterator helpers", () => {
@@ -75,5 +76,21 @@ describe("results are iterator objects that keep return() and throw()", () => {
 
     const legacy: asyncOps.AsyncItereti<number> = asyncOps.map(source, (x) => x);
     expectTypeOf(legacy.return()).toEqualTypeOf<Promise<IteratorResult<number, void>>>();
+  });
+});
+
+describe("stream combinators infer the union of their sources", () => {
+  const clicks = new ReadableStream<MouseEvent>();
+  const keys = new ReadableStream<KeyboardEvent>();
+
+  it("merge", () => {
+    expectTypeOf(streamOps.merge([clicks, keys])).toEqualTypeOf<ReadableStream<MouseEvent | KeyboardEvent>>();
+    expectTypeOf(streamOps.merge([clicks])).toEqualTypeOf<ReadableStream<MouseEvent>>();
+  });
+
+  it("concat", () => {
+    expectTypeOf(streamOps.concat([clicks, keys])).toEqualTypeOf<ReadableStream<MouseEvent | KeyboardEvent>>();
+    // The deprecated variadic form keeps a single chunk type.
+    expectTypeOf(streamOps.concat(clicks, clicks)).toEqualTypeOf<ReadableStream<MouseEvent>>();
   });
 });
