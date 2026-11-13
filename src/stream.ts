@@ -99,9 +99,12 @@ export function concat<T>(
     : [args as ReadableStream<T>[]];
   let index = 0;
   let reader: ReadableStreamDefaultReader<T> | undefined;
+  // Set by `cancelRest`, e.g. on abort, so a `pull` in flight stops instead of opening the rest.
+  let cancelled = false;
 
   /** Cancels the stream being read and every stream that was not started yet. */
   const cancelRest = (reason?: unknown) => {
+    cancelled = true;
     const pending = streams.slice(reader ? index + 1 : index).map((stream) => stream.cancel(reason));
     if (reader) pending.unshift(reader.cancel(reason));
     return cancelAll(pending);
@@ -114,6 +117,10 @@ export function concat<T>(
           while (index < streams.length) {
             reader ??= streams[index].getReader();
             const result = await reader.read();
+            if (cancelled) {
+              reader.releaseLock();
+              return;
+            }
             if (!result.done) {
               controller.enqueue(result.value);
               return;
@@ -530,25 +537,16 @@ export function fromEvents<E extends Event = Event>(
   const queue: E[] = [];
   // The consumer is waiting for an event and the queue is empty.
   let waiting = false;
-  let finished = false;
   // Set when the buffer overflowed: the events already queued are still delivered, then it errors.
   let overflow: RangeError | undefined;
   const listening = new AbortController();
   let controller!: ReadableStreamDefaultController<E>;
 
-  const stopListening = () => {
+  /** Removes the listener and drops the buffered events. `signal` is handled by `abortableStream`. */
+  const finish = () => {
     listening.abort();
-    signal?.removeEventListener("abort", onAbort);
-  };
-  /** Removes the listener and drops the buffered events; `end` errors the output. */
-  const finish = (end?: () => void) => {
-    if (finished) return;
-    finished = true;
-    stopListening();
     queue.length = 0;
-    end?.();
   };
-  const onAbort = () => finish(() => controller.error(signal!.reason));
   const onEvent = (event: Event) => {
     if (waiting) {
       waiting = false;
@@ -561,29 +559,34 @@ export function fromEvents<E extends Event = Event>(
       queue.push(event as E);
     } else if (strategy === "error") {
       overflow = new RangeError(`fromEvents buffer overflow: more than ${buffer} "${type}" events waiting`);
-      stopListening();
-      if (queue.length === 0) finish(() => controller.error(overflow));
+      listening.abort();
+      if (queue.length === 0) {
+        finish();
+        controller.error(overflow);
+      }
     }
     // "drop-newest": the event is discarded.
   };
 
-  return new ReadableStream<E>(
+  return abortableStream<E>(
     {
       start(c) {
         controller = c;
-        if (signal?.aborted) return onAbort();
-        signal?.addEventListener("abort", onAbort, { once: true });
         target.addEventListener(type, onEvent, { capture, passive, signal: listening.signal });
       },
       pull() {
-        if (queue.length > 0) controller.enqueue(queue.shift()!);
-        else if (overflow) finish(() => controller.error(overflow));
-        else waiting = true;
+        if (queue.length > 0) {
+          controller.enqueue(queue.shift()!);
+        } else if (overflow) {
+          finish();
+          controller.error(overflow);
+        } else {
+          waiting = true;
+        }
       },
-      cancel() {
-        finish();
-      },
+      cancel: finish,
     },
+    signal,
     { highWaterMark: 0 },
   );
 }

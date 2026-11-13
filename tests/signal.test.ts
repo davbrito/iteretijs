@@ -66,10 +66,19 @@ describe.each(Object.entries(sources))("%s with a signal", (_name, build) => {
 
   it("does nothing when the signal aborts after the stream closed", async () => {
     const { controller, signal, listeners } = countedSignal();
-    const out = await toArray(build([trackedReadableStream(0, 2), trackedReadableStream(10, 12)], signal));
+    const a = trackedReadableStream(0, 2);
+    const b = trackedReadableStream(10, 12);
+    const reader = build([a, b], signal).getReader();
+    const out: unknown[] = [];
+    for (let r = await reader.read(); !r.done; r = await reader.read()) out.push(r.value);
     expect(out.length).toBeGreaterThan(0);
     expect(listeners()).toBe(0);
-    controller.abort();
+    const cancels = [...a.cancels, ...b.cancels];
+    controller.abort("late");
+    await tick();
+    expect(await reader.read()).toEqual({ done: true, value: undefined });
+    await expect(reader.closed).resolves.toBeUndefined();
+    expect([...a.cancels, ...b.cancels]).toEqual(cancels);
   });
 
   it("removes the listener when the output is cancelled", async () => {
@@ -113,6 +122,22 @@ describe("iota with a signal", () => {
     expect(await toArray(iota(2, { signal }))).toEqual([0, 1]);
     expect(listeners()).toBe(0);
     controller.abort();
+  });
+});
+
+describe("concat after an abort", () => {
+  it("does not open the streams it had not reached", async () => {
+    const first = silent();
+    const rest = [trackedReadableStream(0, 2), trackedReadableStream(0, 2)];
+    const controller = new AbortController();
+    const reader = concat([first, ...rest], { signal: controller.signal }).getReader();
+    const read = reader.read();
+    await tick();
+    controller.abort("stop");
+    await expect(read).rejects.toBe("stop");
+    await tick();
+    expect([first, ...rest].map((stream) => stream.locked)).toEqual([false, false, false]);
+    expect(rest.map((stream) => stream.cancels)).toEqual([["stop"], ["stop"]]);
   });
 });
 
@@ -223,14 +248,34 @@ describe("abortable", () => {
     expect(listeners()).toBe(0);
   });
 
-  it("cancels a stream source when the signal aborts between reads", async () => {
+  it("cancels a stream source with the reason when the signal aborts between reads", async () => {
     const source = trackedReadableStream(0, 5);
     const controller = new AbortController();
     const it = abortable(source, controller.signal);
     await it.next();
     controller.abort("stop");
     await expect(it.next()).rejects.toBe("stop");
+    expect(source.cancels).toEqual(["stop"]);
+    expect(source.locked).toBe(false);
+  });
+
+  it("cancels a stream source at once when the signal aborts during a read that never settles", async () => {
+    const source = silent();
+    const controller = new AbortController();
+    const next = abortable(source, controller.signal).next();
+    await tick();
+    controller.abort("stop");
+    await expect(next).rejects.toBe("stop");
+    await tick();
+    expect(source.cancels).toEqual(["stop"]);
+    expect(source.locked).toBe(false);
+  });
+
+  it("cancels a stream source when the consumer exits early", async () => {
+    const source = trackedReadableStream(0, 5);
+    for await (const _ of abortable(source, new AbortController().signal)) break;
     expect(source.cancels).toHaveLength(1);
+    expect(source.locked).toBe(false);
   });
 
   it("rejects when the source is not iterable", async () => {

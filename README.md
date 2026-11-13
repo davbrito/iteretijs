@@ -226,9 +226,9 @@ for await (const line of abortable(readLines(file), AbortSignal.timeout(5000))) 
 
 The conventions are the same everywhere:
 
-- Aborting rejects the read in progress, or the next one, with `signal.reason`, and cancels or closes the sources. A stream errors with the reason.
+- Aborting rejects the read in progress, or the next one, with `signal.reason`, and cancels or closes the sources. A stream errors with the reason, and a source stream is cancelled with it (an iterator's `return()` takes no reason).
 - A signal that is already aborted rejects the first read and does not open the sources (a stream source is cancelled).
-- Aborting after the stream or the iteration finished does nothing: the listener is removed as soon as it ends, errors or is cancelled, so a long-lived signal keeps nothing alive.
+- Aborting after the stream or the iteration finished does nothing: the listener is removed as soon as it ends, errors or is cancelled. Until then the signal keeps it, and what it reads, alive: if you stop reading early, close it (`break` in a `for await`, `return()`, `cancel()` or `using`) instead of just dropping it, above all with a long-lived signal.
 
 Every iterator returned here is a generator or an async generator, so it already has `Symbol.dispose` or `Symbol.asyncDispose` (Node.js 24; the deprecated `iterateStream` implements it itself): `using` and `await using` close it, and its sources, at the end of the block.
 
