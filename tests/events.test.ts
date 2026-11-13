@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { fromEvents } from "../src/stream.ts";
 
 /** An `EventTarget` that tracks the listeners still attached for `"ping"`. */
@@ -135,8 +135,60 @@ describe("fromEvents", () => {
     target.ping(2);
     expect(target.listeners).toBe(1);
     target.ping(3);
+    expect(target.listeners).toBe(0);
+    await reader.read();
+    await reader.read();
+    await expect(reader.read()).rejects.toBeInstanceOf(RangeError);
+  });
+
+  it("delivers the buffered events before the overflow error", async () => {
+    const target = new Target();
+    const reader = fromEvents<CustomEvent<number>>(target, "ping", { buffer: 2 }).getReader();
+    for (const n of [1, 2, 3]) target.ping(n);
+    expect(target.listeners).toBe(0);
+    expect((await reader.read()).value?.detail).toBe(1);
+    expect((await reader.read()).value?.detail).toBe(2);
+    await expect(reader.read()).rejects.toBeInstanceOf(RangeError);
+  });
+
+  it("errors a for await loop with a RangeError on overflow", async () => {
+    const target = new Target();
+    const events = fromEvents<CustomEvent<number>>(target, "ping", { buffer: 1 });
+    target.ping(1);
+    target.ping(2);
+    const seen: number[] = [];
+    await expect(
+      (async () => {
+        for await (const event of events) seen.push(event.detail);
+      })(),
+    ).rejects.toBeInstanceOf(RangeError);
+    expect(seen).toEqual([1]);
+  });
+
+  it("with buffer 0 and the default strategy, errors on an event nobody is waiting for", async () => {
+    const target = new Target();
+    const reader = fromEvents(target, "ping", { buffer: 0 }).getReader();
+    target.ping(1);
     await expect(reader.read()).rejects.toBeInstanceOf(RangeError);
     expect(target.listeners).toBe(0);
+  });
+
+  it("with buffer 0 and drop-oldest, discards the events nobody is waiting for", async () => {
+    const target = new Target();
+    const events = fromEvents<CustomEvent<number>>(target, "ping", { buffer: 0, strategy: "drop-oldest" });
+    target.ping(1);
+    const reader = events.getReader();
+    const next = reader.read();
+    await tick();
+    target.ping(2);
+    expect((await next).value?.detail).toBe(2);
+  });
+
+  it("passes capture and passive to addEventListener", () => {
+    const target = new Target();
+    const add = vi.spyOn(target, "addEventListener");
+    fromEvents(target, "ping", { capture: true, passive: true });
+    expect(add).toHaveBeenCalledWith("ping", expect.any(Function), expect.objectContaining({ capture: true, passive: true }));
   });
 
   it("drops the oldest events with drop-oldest", async () => {

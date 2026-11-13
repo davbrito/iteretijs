@@ -376,13 +376,16 @@ export type FromEventsStrategy = "drop-oldest" | "drop-newest" | "error";
 export interface FromEventsOptions {
   /**
    * How many events are kept while the consumer is busy: `Infinity` (the default) or a
-   * non-negative integer. With 0, an event is only kept if the consumer is already waiting for one.
+   * non-negative integer. With 0, an event is only kept if the consumer is already waiting for one,
+   * so with the default `"error"` strategy an event that arrives while the consumer is busy errors
+   * the stream (use `"drop-newest"` or `"drop-oldest"` to ignore it). A `read()` reaches the stream a
+   * few microtasks later, so an event dispatched synchronously after it may still count as busy.
    */
   buffer?: number;
   /**
    * What happens to an event that arrives with a full buffer: `"drop-oldest"` discards the oldest
    * buffered event to make room, `"drop-newest"` discards the new one, and `"error"` (the default)
-   * errors the stream with a `RangeError`.
+   * errors the stream with a `RangeError` once the events already buffered have been read.
    */
   strategy?: FromEventsStrategy;
   /** Aborting it removes the listener and errors the stream with the signal's reason. */
@@ -420,15 +423,20 @@ export function fromEvents<E extends Event = Event>(
   // The consumer is waiting for an event and the queue is empty.
   let waiting = false;
   let finished = false;
+  // Set when the buffer overflowed: the events already queued are still delivered, then it errors.
+  let overflow: RangeError | undefined;
   const listening = new AbortController();
   let controller!: ReadableStreamDefaultController<E>;
 
+  const stopListening = () => {
+    listening.abort();
+    signal?.removeEventListener("abort", onAbort);
+  };
   /** Removes the listener and drops the buffered events; `end` errors the output. */
   const finish = (end?: () => void) => {
     if (finished) return;
     finished = true;
-    listening.abort();
-    signal?.removeEventListener("abort", onAbort);
+    stopListening();
     queue.length = 0;
     end?.();
   };
@@ -444,8 +452,9 @@ export function fromEvents<E extends Event = Event>(
       queue.shift();
       queue.push(event as E);
     } else if (strategy === "error") {
-      const error = new RangeError(`fromEvents buffer overflow: more than ${buffer} "${type}" events waiting`);
-      finish(() => controller.error(error));
+      overflow = new RangeError(`fromEvents buffer overflow: more than ${buffer} "${type}" events waiting`);
+      stopListening();
+      if (queue.length === 0) finish(() => controller.error(overflow));
     }
     // "drop-newest": the event is discarded.
   };
@@ -454,15 +463,13 @@ export function fromEvents<E extends Event = Event>(
     {
       start(c) {
         controller = c;
-        if (signal?.aborted) {
-          finish(() => controller.error(signal.reason));
-          return;
-        }
+        if (signal?.aborted) return onAbort();
         signal?.addEventListener("abort", onAbort, { once: true });
         target.addEventListener(type, onEvent, { capture, passive, signal: listening.signal });
       },
       pull() {
         if (queue.length > 0) controller.enqueue(queue.shift()!);
+        else if (overflow) finish(() => controller.error(overflow));
         else waiting = true;
       },
       cancel() {
