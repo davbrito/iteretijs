@@ -1,5 +1,27 @@
 # iteretijs
 
+## 0.4.2
+
+### Patch Changes
+
+- [#71](https://github.com/davbrito/iteretijs/pull/71) [`2b2a31a`](https://github.com/davbrito/iteretijs/commit/2b2a31a66f9a9a7357fc6c8e2182fd56a3cbce19) Thanks [@davbrito](https://github.com/davbrito)! - Add `parallel(source, fn, { concurrency, ordered, signal })` to `iteretijs/async`: calls `fn` on each item of a sync or async iterable (or a `ReadableStream`) with at most `concurrency` calls at once, and yields the results.
+
+  ```ts
+  import { parallel } from "iteretijs/async";
+
+  for await (const data of parallel(urls, (url, _i, signal) => fetch(url, { signal }).then((r) => r.json()), {
+    concurrency: 8,
+  })) {
+    console.log(data);
+  }
+  ```
+
+  Results come in source order by default, or as soon as each is ready with `ordered: false`. `fn` gets an `AbortSignal` that aborts when a call rejects, when you stop reading or when `signal` aborts. `parallel` then waits for the running calls to settle and closes the source.
+
+- [#69](https://github.com/davbrito/iteretijs/pull/69) [`92ec64f`](https://github.com/davbrito/iteretijs/commit/92ec64faee7e37fed629958d949e4f8d38448be9) Thanks [@davbrito](https://github.com/davbrito)! - Add `fromEvents(target, type, { buffer?, strategy?, signal?, capture?, passive? })` to `iteretijs/stream`: the events of an `EventTarget` as a `ReadableStream`.
+
+  `buffer` bounds the events kept while the consumer is busy (`Infinity` by default), and `strategy` (`"error"`, `"drop-oldest"` or `"drop-newest"`) decides what happens when it is full. The listener is removed on cancel (as when a `for await` loop exits early), error and `signal` abort.
+
 ## 0.4.1
 
 ### Patch Changes
